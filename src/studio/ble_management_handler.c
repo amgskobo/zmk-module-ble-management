@@ -1,528 +1,272 @@
 /**
- * BLE Management Feature - Custom Studio RPC Handler
+ * BLE management custom Studio RPC: lists the host profiles with their
+ * labels, switches and unpairs profiles, reports the split role and sets the
+ * preferred output (USB or BLE).
  *
- * This file implements BLE management functionality for ZMK Studio.
- * It provides APIs to:
- * - View and manage BLE profiles
- * - Set custom names for profiles (tied to BLE address)
- * - Switch active profiles
- * - Unpair profiles
- * - Manage split keyboard connections
- * - Set and get output priority (USB or BLE)
+ * The subsystem stays UNSECURED so the lists can be read while Studio is
+ * locked. Changes to bonds, the active profile, labels and the output affect
+ * every host, and a bonded host's address identifies that device, so both
+ * need an unlocked Studio.
  */
+
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <pb_decode.h>
 #include <pb_encode.h>
 #include <zephyr/bluetooth/addr.h>
 #include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/init.h>
-#include <zephyr/settings/settings.h>
+#include <zephyr/sys/util.h>
 #include <zmk/ble.h>
 #include <zmk/ble_management/ble_management.pb.h>
 #include <zmk/endpoints.h>
+#include <zmk/studio/core.h>
 #include <zmk/studio/custom.h>
 
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE)
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
-#include <zmk/split/bluetooth/peripheral.h>
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+#include "../profile_labels.h"
 #endif
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE)
+#include <zephyr/bluetooth/conn.h>
 #endif
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
-
-// Structure to store profile name tied to BLE address
-struct profile_name_entry {
-#if IS_ENABLED(CONFIG_ZMK_BLE)
-    bt_addr_le_t addr;
+#ifndef CONFIG_ZMK_MODULE_BLE_MANAGEMENT_LOG_LEVEL
+#define CONFIG_ZMK_MODULE_BLE_MANAGEMENT_LOG_LEVEL 3
 #endif
-    char name[32];
-};
+LOG_MODULE_REGISTER(zmk_module_ble_management_ble_management_handler,
+                    CONFIG_ZMK_MODULE_BLE_MANAGEMENT_LOG_LEVEL);
 
-// Profile names cache (in memory)
-#if IS_ENABLED(CONFIG_ZMK_BLE)
-static struct profile_name_entry profile_names[ZMK_BLE_PROFILE_COUNT];
-#else
-static struct profile_name_entry
-    profile_names[1];  // Dummy array when BLE is disabled
-#endif
-
-/**
- * Metadata for the custom subsystem.
- */
 static struct zmk_rpc_custom_subsystem_meta ble_management_meta = {
     ZMK_RPC_CUSTOM_SUBSYSTEM_UI_URLS(
         "https://cormoran.github.io/zmk-module-ble-management/"),
     .security = ZMK_STUDIO_RPC_HANDLER_UNSECURED,
 };
 
-/**
- * Register the custom RPC subsystem.
- */
 ZMK_RPC_CUSTOM_SUBSYSTEM(cormoran_ble, &ble_management_meta,
                          ble_management_rpc_handle_request);
 
 ZMK_RPC_CUSTOM_SUBSYSTEM_RESPONSE_BUFFER(cormoran_ble,
                                          zmk_ble_management_Response);
 
-// Forward declarations
-static int handle_get_profiles_request(
-    const zmk_ble_management_GetProfilesRequest *req,
-    zmk_ble_management_Response *resp);
-static int handle_set_profile_name_request(
-    const zmk_ble_management_SetProfileNameRequest *req,
-    zmk_ble_management_Response *resp);
-static int handle_switch_profile_request(
-    const zmk_ble_management_SwitchProfileRequest *req,
-    zmk_ble_management_Response *resp);
-static int handle_unpair_profile_request(
-    const zmk_ble_management_UnpairProfileRequest *req,
-    zmk_ble_management_Response *resp);
-static int handle_get_split_info_request(
-    const zmk_ble_management_GetSplitInfoRequest *req,
-    zmk_ble_management_Response *resp);
-static int handle_forget_split_bond_request(
-    const zmk_ble_management_ForgetSplitBondRequest *req,
-    zmk_ble_management_Response *resp);
-static int handle_set_output_priority_request(
-    const zmk_ble_management_SetOutputPriorityRequest *req,
-    zmk_ble_management_Response *resp);
-static int handle_get_output_priority_request(
-    const zmk_ble_management_GetOutputPriorityRequest *req,
-    zmk_ble_management_Response *resp);
-
-/**
- * Get profile name from cache based on BLE address
- */
-static const char *get_profile_name(const bt_addr_le_t *addr) {
-#if IS_ENABLED(CONFIG_ZMK_BLE)
-    if (!addr) {
-        return "";
-    }
-
-    for (int i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
-        if (bt_addr_le_eq(&profile_names[i].addr, addr)) {
-            return profile_names[i].name;
-        }
-    }
-#endif
-    return "";
+static bool studio_unlocked(void) {
+    return zmk_studio_core_get_lock_state() ==
+           ZMK_STUDIO_CORE_LOCK_STATE_UNLOCKED;
 }
 
-/**
- * Save profile name to settings and cache
- */
-static int save_profile_name(const bt_addr_le_t *addr, const char *name) {
-#if IS_ENABLED(CONFIG_ZMK_BLE)
-    if (!addr || !name) {
-        return -EINVAL;
-    }
-
-    // Find existing entry or empty slot
-    int slot = -1;
-    for (int i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
-        if (bt_addr_le_eq(&profile_names[i].addr, addr)) {
-            slot = i;
-            break;
-        }
-        if (slot == -1 &&
-            bt_addr_le_eq(&profile_names[i].addr, BT_ADDR_LE_NONE)) {
-            slot = i;
-        }
-    }
-
-    if (slot == -1) {
-        LOG_WRN("No slot available for profile name");
-        return -ENOMEM;
-    }
-
-    // Update cache
-    bt_addr_le_copy(&profile_names[slot].addr, addr);
-    strncpy(profile_names[slot].name, name,
-            sizeof(profile_names[slot].name) - 1);
-    profile_names[slot].name[sizeof(profile_names[slot].name) - 1] = '\0';
-
-    // Save to settings
-    char setting_name[64];
-    char addr_str[BT_ADDR_STR_LEN];
-    bt_addr_to_str(&addr->a, addr_str, sizeof(addr_str));
-    snprintf(setting_name, sizeof(setting_name), "ble_mgmt/name/%s", addr_str);
-
-    return settings_save_one(setting_name, name, strlen(name) + 1);
-#else
-    return -ENOTSUP;
-#endif
-}
-
-/**
- * Settings callback for loading profile names
- */
-static int profile_names_settings_set(const char *name, size_t len,
-                                      settings_read_cb read_cb, void *cb_arg) {
-#if IS_ENABLED(CONFIG_ZMK_BLE)
-    const char *next;
-    int rc;
-
-    if (settings_name_steq(name, "name", &next) && next) {
-        char addr_str[BT_ADDR_STR_LEN];
-        strncpy(addr_str, next, sizeof(addr_str) - 1);
-        addr_str[sizeof(addr_str) - 1] = '\0';
-
-        bt_addr_le_t addr;
-        // Parse address (format: "XX:XX:XX:XX:XX:XX (type)")
-        if (bt_addr_le_from_str(addr_str, "public", &addr) != 0 &&
-            bt_addr_le_from_str(addr_str, "random", &addr) != 0) {
-            LOG_WRN("Failed to parse address: %s", addr_str);
-            return 0;
-        }
-
-        // Find or allocate slot
-        int slot = -1;
-        for (int i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
-            if (bt_addr_le_eq(&profile_names[i].addr, &addr)) {
-                slot = i;
-                break;
-            }
-            if (slot == -1 &&
-                bt_addr_le_eq(&profile_names[i].addr, BT_ADDR_LE_NONE)) {
-                slot = i;
-            }
-        }
-
-        if (slot == -1) {
-            LOG_WRN("No slot for loading profile name");
-            return 0;
-        }
-
-        bt_addr_le_copy(&profile_names[slot].addr, &addr);
-        rc = read_cb(cb_arg, profile_names[slot].name,
-                     sizeof(profile_names[slot].name));
-        if (rc >= 0) {
-            profile_names[slot].name[sizeof(profile_names[slot].name) - 1] =
-                '\0';
-            LOG_DBG("Loaded profile name for %s: %s", addr_str,
-                    profile_names[slot].name);
-        }
-    }
-#endif
-
-    return 0;
-}
-
-SETTINGS_STATIC_HANDLER_DEFINE(ble_mgmt, "ble_mgmt", NULL,
-                               profile_names_settings_set, NULL, NULL);
-
-/**
- * Main request handler for the custom RPC subsystem.
- */
-static bool ble_management_rpc_handle_request(
-    const zmk_custom_CallRequest *raw_request, pb_callback_t *encode_response) {
-    zmk_ble_management_Response *resp =
-        ZMK_RPC_CUSTOM_SUBSYSTEM_RESPONSE_BUFFER_ALLOCATE(cormoran_ble,
-                                                          encode_response);
-
-    zmk_ble_management_Request req = zmk_ble_management_Request_init_zero;
-
-    // Decode the incoming request
-    pb_istream_t req_stream = pb_istream_from_buffer(raw_request->payload.bytes,
-                                                     raw_request->payload.size);
-    if (!pb_decode(&req_stream, zmk_ble_management_Request_fields, &req)) {
-        LOG_WRN("Failed to decode ble_management request: %s",
-                PB_GET_ERROR(&req_stream));
-        zmk_ble_management_ErrorResponse err =
-            zmk_ble_management_ErrorResponse_init_zero;
-        snprintf(err.message, sizeof(err.message), "Failed to decode request");
-        resp->which_response_type = zmk_ble_management_Response_error_tag;
-        resp->response_type.error = err;
-        return true;
-    }
-
-    int rc = 0;
-    switch (req.which_request_type) {
+/* Only the reads answer while locked; any other request, including one a
+ * later schema adds, needs an unlocked Studio. */
+static bool request_needs_unlock(pb_size_t request_type) {
+    switch (request_type) {
         case zmk_ble_management_Request_get_profiles_tag:
-            rc = handle_get_profiles_request(&req.request_type.get_profiles,
-                                             resp);
-            break;
-        case zmk_ble_management_Request_set_profile_name_tag:
-            rc = handle_set_profile_name_request(
-                &req.request_type.set_profile_name, resp);
-            break;
-        case zmk_ble_management_Request_switch_profile_tag:
-            rc = handle_switch_profile_request(&req.request_type.switch_profile,
-                                               resp);
-            break;
-        case zmk_ble_management_Request_unpair_profile_tag:
-            rc = handle_unpair_profile_request(&req.request_type.unpair_profile,
-                                               resp);
-            break;
         case zmk_ble_management_Request_get_split_info_tag:
-            rc = handle_get_split_info_request(&req.request_type.get_split_info,
-                                               resp);
-            break;
-        case zmk_ble_management_Request_forget_split_bond_tag:
-            rc = handle_forget_split_bond_request(
-                &req.request_type.forget_split_bond, resp);
-            break;
-        case zmk_ble_management_Request_set_output_priority_tag:
-            rc = handle_set_output_priority_request(
-                &req.request_type.set_output_priority, resp);
-            break;
         case zmk_ble_management_Request_get_output_priority_tag:
-            rc = handle_get_output_priority_request(
-                &req.request_type.get_output_priority, resp);
-            break;
+            return false;
         default:
-            LOG_WRN("Unsupported request type: %d", req.which_request_type);
-            rc = -ENOTSUP;
+            return true;
     }
-
-    if (rc != 0) {
-        zmk_ble_management_ErrorResponse err =
-            zmk_ble_management_ErrorResponse_init_zero;
-        snprintf(err.message, sizeof(err.message),
-                 "Failed to process request: %d", rc);
-        resp->which_response_type = zmk_ble_management_Response_error_tag;
-        resp->response_type.error = err;
-    }
-    return true;
 }
 
-/**
- * Handle GetProfilesRequest
- */
-static int handle_get_profiles_request(
-    const zmk_ble_management_GetProfilesRequest *req,
-    zmk_ble_management_Response *resp) {
-    LOG_DBG("GetProfilesRequest");
-
-    zmk_ble_management_GetProfilesResponse result =
-        zmk_ble_management_GetProfilesResponse_init_zero;
+static void set_error(zmk_ble_management_Response *resp, const char *message) {
+    zmk_ble_management_ErrorResponse err =
+        zmk_ble_management_ErrorResponse_init_zero;
+    snprintf(err.message, sizeof(err.message), "%s", message);
+    resp->which_response_type = zmk_ble_management_Response_error_tag;
+    resp->response_type.error = err;
+}
 
 #if IS_ENABLED(CONFIG_ZMK_BLE)
-    result.max_profiles = ZMK_BLE_PROFILE_COUNT;
+/* The bonded host address of profile `index`, or NULL if the index is out of
+ * range or the profile is open. */
+static const bt_addr_le_t *profile_peer(uint32_t index) {
+    if (index >= ZMK_BLE_PROFILE_COUNT) {
+        LOG_WRN("Invalid profile index: %d", index);
+        return NULL;
+    }
+    const bt_addr_le_t *addr = zmk_ble_profile_address(index);
+    return addr && !bt_addr_le_eq(addr, BT_ADDR_LE_NONE) ? addr : NULL;
+}
+#endif
 
-    int active = zmk_ble_active_profile_index();
+static int handle_get_profiles(zmk_ble_management_Response *resp) {
+    LOG_DBG("GetProfilesRequest");
+    resp->which_response_type = zmk_ble_management_Response_get_profiles_tag;
+
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+    zmk_ble_management_GetProfilesResponse *result =
+        &resp->response_type.get_profiles;
+    /* The wire schema has room for five profiles; never overrun its array. */
+    if (ZMK_BLE_PROFILE_COUNT > ARRAY_SIZE(result->profiles)) {
+        return -E2BIG;
+    }
+    result->max_profiles   = ZMK_BLE_PROFILE_COUNT;
+    result->profiles_count = ZMK_BLE_PROFILE_COUNT;
+
+    const int active = zmk_ble_active_profile_index();
+    /* Labels stay visible while locked; host addresses do not. */
+    const bool include_address = studio_unlocked();
 
     for (uint8_t i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
-        zmk_ble_management_ProfileInfo *profile = &result.profiles[i];
-        profile->index                          = i;
-        profile->is_open                        = zmk_ble_profile_is_open(i);
+        zmk_ble_management_ProfileInfo *profile = &result->profiles[i];
+        profile->index        = i;
+        profile->is_open      = zmk_ble_profile_is_open(i);
         profile->is_connected = zmk_ble_profile_is_connected(i);
         profile->is_active    = (i == active);
 
-        // Get BLE address
-        bt_addr_le_t *addr = zmk_ble_profile_address(i);
-        if (addr && !bt_addr_le_eq(addr, BT_ADDR_LE_NONE)) {
-            char addr_str[BT_ADDR_LE_STR_LEN];
-            bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-            strncpy(profile->address, addr_str, sizeof(profile->address) - 1);
-            profile->address[sizeof(profile->address) - 1] = '\0';
-
-            // Get custom name
-            const char *name = get_profile_name(addr);
-            if (name && name[0] != '\0') {
-                strncpy(profile->name, name, sizeof(profile->name) - 1);
-                profile->name[sizeof(profile->name) - 1] = '\0';
-            }
+        const bt_addr_le_t *addr = profile_peer(i);
+        if (!addr) {
+            continue;
         }
+        if (include_address) {
+            bt_addr_to_str(&addr->a, profile->address,
+                           sizeof(profile->address));
+        }
+        strncpy(profile->name, get_profile_name(addr),
+                sizeof(profile->name) - 1);
     }
-
-    result.profiles_count = ZMK_BLE_PROFILE_COUNT;
-#else
-    result.max_profiles   = 0;
-    result.profiles_count = 0;
 #endif
-
-    resp->which_response_type = zmk_ble_management_Response_get_profiles_tag;
-    resp->response_type.get_profiles = result;
     return 0;
 }
 
-/**
- * Handle SetProfileNameRequest
- */
-static int handle_set_profile_name_request(
+static int handle_set_profile_name(
     const zmk_ble_management_SetProfileNameRequest *req,
     zmk_ble_management_Response *resp) {
-    LOG_DBG("SetProfileNameRequest: index=%d, name=%s", req->index, req->name);
-
-    zmk_ble_management_SetProfileNameResponse result =
-        zmk_ble_management_SetProfileNameResponse_init_zero;
-
-#if IS_ENABLED(CONFIG_ZMK_BLE)
-    if (req->index >= ZMK_BLE_PROFILE_COUNT) {
-        LOG_WRN("Invalid profile index: %d", req->index);
-        result.success = false;
-    } else {
-        bt_addr_le_t *addr = zmk_ble_profile_address(req->index);
-        if (addr && !bt_addr_le_eq(addr, BT_ADDR_LE_NONE)) {
-            int rc         = save_profile_name(addr, req->name);
-            result.success = (rc == 0);
-        } else {
-            LOG_WRN("Profile %d has no address", req->index);
-            result.success = false;
-        }
-    }
-#else
-    result.success = false;
-#endif
-
+    LOG_DBG("profile label update requested: profile=%d", req->index);
     resp->which_response_type =
         zmk_ble_management_Response_set_profile_name_tag;
-    resp->response_type.set_profile_name = result;
+
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+    const bt_addr_le_t *addr = profile_peer(req->index);
+    if (addr) {
+        resp->response_type.set_profile_name.success =
+            save_profile_name(addr, req->name) == 0;
+    } else if (req->index < ZMK_BLE_PROFILE_COUNT) {
+        LOG_WRN("Profile %d has no address", req->index);
+    }
+#endif
     return 0;
 }
 
-/**
- * Handle SwitchProfileRequest
- */
-static int handle_switch_profile_request(
+static int handle_switch_profile(
     const zmk_ble_management_SwitchProfileRequest *req,
     zmk_ble_management_Response *resp) {
     LOG_DBG("SwitchProfileRequest: index=%d", req->index);
-
-    zmk_ble_management_SwitchProfileResponse result =
-        zmk_ble_management_SwitchProfileResponse_init_zero;
+    resp->which_response_type = zmk_ble_management_Response_switch_profile_tag;
 
 #if IS_ENABLED(CONFIG_ZMK_BLE)
-    if (req->index >= ZMK_BLE_PROFILE_COUNT) {
-        LOG_WRN("Invalid profile index: %d", req->index);
-        result.success = false;
+    if (req->index < ZMK_BLE_PROFILE_COUNT) {
+        resp->response_type.switch_profile.success =
+            zmk_ble_prof_select(req->index) == 0;
     } else {
-        int rc         = zmk_ble_prof_select(req->index);
-        result.success = (rc == 0);
+        LOG_WRN("Invalid profile index: %d", req->index);
     }
-#else
-    result.success = false;
 #endif
-
-    resp->which_response_type = zmk_ble_management_Response_switch_profile_tag;
-    resp->response_type.switch_profile = result;
     return 0;
 }
 
-/**
- * Handle UnpairProfileRequest
- */
-static int handle_unpair_profile_request(
+static int handle_unpair_profile(
     const zmk_ble_management_UnpairProfileRequest *req,
     zmk_ble_management_Response *resp) {
     LOG_DBG("UnpairProfileRequest: index=%d", req->index);
-
-    zmk_ble_management_UnpairProfileResponse result =
-        zmk_ble_management_UnpairProfileResponse_init_zero;
+    resp->which_response_type = zmk_ble_management_Response_unpair_profile_tag;
 
 #if IS_ENABLED(CONFIG_ZMK_BLE)
     if (req->index >= ZMK_BLE_PROFILE_COUNT) {
         LOG_WRN("Invalid profile index: %d", req->index);
-        result.success = false;
-    } else {
-        // Clear profile name from cache if it exists
-        bt_addr_le_t *addr = zmk_ble_profile_address(req->index);
-        if (addr && !bt_addr_le_eq(addr, BT_ADDR_LE_NONE)) {
-            for (int i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
-                if (bt_addr_le_eq(&profile_names[i].addr, addr)) {
-                    bt_addr_le_copy(&profile_names[i].addr, BT_ADDR_LE_NONE);
-                    profile_names[i].name[0] = '\0';
-                    break;
-                }
-            }
-        }
-        int active = zmk_ble_active_profile_index();
-        int rc     = zmk_ble_prof_select(req->index);
-        if (rc == 0) {
-            zmk_ble_clear_bonds();
-            if (active != req->index) {
-                rc = zmk_ble_prof_select(active);
-            }
-        }
-        result.success = (rc == 0);
+        return 0;
     }
-#else
-    result.success = false;
-#endif
+    /* Copied: clearing the bond resets the profile's address. */
+    const bt_addr_le_t *addr = profile_peer(req->index);
+    bt_addr_le_t peer;
+    bt_addr_le_copy(&peer, addr ? addr : BT_ADDR_LE_NONE);
 
-    resp->which_response_type = zmk_ble_management_Response_unpair_profile_tag;
-    resp->response_type.unpair_profile = result;
+    /* ZMK clears only the active profile's bond. */
+    const int active = zmk_ble_active_profile_index();
+    int rc = zmk_ble_prof_select(req->index);
+    if (rc == 0) {
+        zmk_ble_clear_bonds();
+        if (addr) {
+            int label_rc = delete_profile_name(&peer);
+            if (label_rc < 0) {
+                LOG_WRN("Profile label not deleted: %d", label_rc);
+            }
+        }
+        if (active != req->index) {
+            rc = zmk_ble_prof_select(active);
+        }
+    }
+    resp->response_type.unpair_profile.success = (rc == 0);
+#endif
     return 0;
 }
 
-/**
- * Handle GetSplitInfoRequest
- */
-static int handle_get_split_info_request(
-    const zmk_ble_management_GetSplitInfoRequest *req,
-    zmk_ble_management_Response *resp) {
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE)
+/* A central is the Bluetooth central of its peripherals and a Bluetooth
+ * peripheral to its hosts, so a connected central-role link is a half. */
+static void find_peripheral_link(struct bt_conn *conn, void *data) {
+    struct bt_conn_info info;
+    if (bt_conn_get_info(conn, &info) == 0 &&
+        info.role == BT_CONN_ROLE_CENTRAL &&
+        info.state == BT_CONN_STATE_CONNECTED) {
+        *(bool *)data = true;
+    }
+}
+#endif
+
+static int handle_get_split_info(zmk_ble_management_Response *resp) {
     LOG_DBG("GetSplitInfoRequest");
-
-    zmk_ble_management_GetSplitInfoResponse result =
-        zmk_ble_management_GetSplitInfoResponse_init_zero;
-    zmk_ble_management_SplitInfo *info = &result.info;
+    zmk_ble_management_GetSplitInfoResponse *result =
+        &resp->response_type.get_split_info;
+    resp->which_response_type = zmk_ble_management_Response_get_split_info_tag;
+    /* Present even on a standalone keyboard, with every field false. */
+    result->has_info = true;
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE)
-    info->is_split = true;
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-    info->is_central = true;
-    // For central, check if peripheral is connected
-    // Note: ZMK doesn't expose a direct API for this, so we'll set it to false
-    // for now
-    info->peripheral_connected = false;
-    info->central_bonded       = false;
-#elif IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_PERIPHERAL)
-    info->is_central           = false;
-    info->peripheral_connected = false;
-    info->central_bonded       = zmk_split_bt_peripheral_is_bonded();
+    /* Studio RPC runs only on the central (see Kconfig), so central_bonded,
+     * a peripheral's view, stays false. */
+    result->info.is_split   = true;
+    result->info.is_central = true;
+    bt_conn_foreach(BT_CONN_TYPE_LE, find_peripheral_link,
+                    &result->info.peripheral_connected);
 #endif
-#else
-    info->is_split             = false;
-    info->is_central           = false;
-    info->peripheral_connected = false;
-    info->central_bonded       = false;
-#endif
-
-    resp->which_response_type = zmk_ble_management_Response_get_split_info_tag;
-    resp->response_type.get_split_info = result;
     return 0;
 }
 
-/**
- * Handle ForgetSplitBondRequest
- */
-static int handle_forget_split_bond_request(
-    const zmk_ble_management_ForgetSplitBondRequest *req,
-    zmk_ble_management_Response *resp) {
+static int handle_forget_split_bond(zmk_ble_management_Response *resp) {
     LOG_DBG("ForgetSplitBondRequest");
-
-    zmk_ble_management_ForgetSplitBondResponse result =
-        zmk_ble_management_ForgetSplitBondResponse_init_zero;
-
-#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE)
-    // Clear all bonds to reset split connection
-    zmk_ble_clear_all_bonds();
-    result.success = true;
-#else
-    LOG_WRN("Split BLE not enabled");
-    result.success = false;
-#endif
-
     resp->which_response_type =
         zmk_ble_management_Response_forget_split_bond_tag;
-    resp->response_type.forget_split_bond = result;
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE)
+    /* ZMK clears every host profile's bond and selects profile 0; the bond
+     * between the halves is not touched. Labels follow the host bonds. */
+    bt_addr_le_t peers[ZMK_BLE_PROFILE_COUNT];
+    for (uint8_t i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
+        const bt_addr_le_t *addr = profile_peer(i);
+        bt_addr_le_copy(&peers[i], addr ? addr : BT_ADDR_LE_NONE);
+    }
+    zmk_ble_clear_all_bonds();
+    for (uint8_t i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
+        if (!bt_addr_le_eq(&peers[i], BT_ADDR_LE_NONE)) {
+            delete_profile_name(&peers[i]);
+        }
+    }
+    resp->response_type.forget_split_bond.success = true;
+#else
+    LOG_WRN("Split BLE not enabled");
+#endif
     return 0;
 }
 
-/**
- * Handle SetOutputPriorityRequest
- */
-static int handle_set_output_priority_request(
+static int handle_set_output_priority(
     const zmk_ble_management_SetOutputPriorityRequest *req,
     zmk_ble_management_Response *resp) {
     LOG_DBG("SetOutputPriorityRequest: priority=%d", req->priority);
+    resp->which_response_type =
+        zmk_ble_management_Response_set_output_priority_tag;
 
-    zmk_ble_management_SetOutputPriorityResponse result =
-        zmk_ble_management_SetOutputPriorityResponse_init_zero;
-
-    // Convert protobuf enum to ZMK transport enum
     enum zmk_transport transport;
     switch (req->priority) {
         case zmk_ble_management_OutputPriority_OUTPUT_PRIORITY_USB:
@@ -533,73 +277,92 @@ static int handle_set_output_priority_request(
             break;
         default:
             LOG_WRN("Invalid output priority: %d", req->priority);
-            result.success = false;
-            resp->which_response_type =
-                zmk_ble_management_Response_set_output_priority_tag;
-            resp->response_type.set_output_priority = result;
             return 0;
     }
-
-    int rc         = zmk_endpoint_set_preferred_transport(transport);
-    result.success = (rc == 0);
-
-    resp->which_response_type =
-        zmk_ble_management_Response_set_output_priority_tag;
-    resp->response_type.set_output_priority = result;
+    resp->response_type.set_output_priority.success =
+        zmk_endpoint_set_preferred_transport(transport) == 0;
     return 0;
 }
 
-/**
- * Handle GetOutputPriorityRequest
- */
-static int handle_get_output_priority_request(
-    const zmk_ble_management_GetOutputPriorityRequest *req,
-    zmk_ble_management_Response *resp) {
+static int handle_get_output_priority(zmk_ble_management_Response *resp) {
     LOG_DBG("GetOutputPriorityRequest");
-
-    zmk_ble_management_GetOutputPriorityResponse result =
-        zmk_ble_management_GetOutputPriorityResponse_init_zero;
-
-    // Get the currently selected endpoint
-    enum zmk_transport current = zmk_endpoint_get_preferred_transport();
-
-    // Convert ZMK transport enum to protobuf enum
-    switch (current) {
-        case ZMK_TRANSPORT_USB:
-            result.priority =
-                zmk_ble_management_OutputPriority_OUTPUT_PRIORITY_USB;
-            break;
-        case ZMK_TRANSPORT_BLE:
-            result.priority =
-                zmk_ble_management_OutputPriority_OUTPUT_PRIORITY_BLE;
-            break;
-        default:
-            LOG_WRN("Unknown transport type: %d", current);
-            result.priority =
-                zmk_ble_management_OutputPriority_OUTPUT_PRIORITY_BLE;
-            break;
-    }
-
     resp->which_response_type =
         zmk_ble_management_Response_get_output_priority_tag;
-    resp->response_type.get_output_priority = result;
-    return 0;
-}
 
-/**
- * Initialize profile names on boot
- */
-static int profile_names_init(void) {
-#if IS_ENABLED(CONFIG_ZMK_BLE)
-    // Initialize all entries to empty
-    for (int i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
-        bt_addr_le_copy(&profile_names[i].addr, BT_ADDR_LE_NONE);
-        profile_names[i].name[0] = '\0';
+    enum zmk_transport current = zmk_endpoint_get_preferred_transport();
+    if (current == ZMK_TRANSPORT_USB) {
+        resp->response_type.get_output_priority.priority =
+            zmk_ble_management_OutputPriority_OUTPUT_PRIORITY_USB;
+    } else {
+        if (current != ZMK_TRANSPORT_BLE) {
+            LOG_WRN("Unknown transport type: %d", current);
+        }
+        resp->response_type.get_output_priority.priority =
+            zmk_ble_management_OutputPriority_OUTPUT_PRIORITY_BLE;
     }
-#endif
-
-    LOG_DBG("Profile names initialized");
     return 0;
 }
 
-SYS_INIT(profile_names_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+static bool ble_management_rpc_handle_request(
+    const zmk_custom_CallRequest *raw_request, pb_callback_t *encode_response) {
+    zmk_ble_management_Response *resp =
+        ZMK_RPC_CUSTOM_SUBSYSTEM_RESPONSE_BUFFER_ALLOCATE(cormoran_ble,
+                                                          encode_response);
+
+    zmk_ble_management_Request req = zmk_ble_management_Request_init_zero;
+    pb_istream_t req_stream = pb_istream_from_buffer(raw_request->payload.bytes,
+                                                     raw_request->payload.size);
+    if (!pb_decode(&req_stream, zmk_ble_management_Request_fields, &req)) {
+        LOG_WRN("Failed to decode ble_management request: %s",
+                PB_GET_ERROR(&req_stream));
+        set_error(resp, "Failed to decode request");
+        return true;
+    }
+
+    if (request_needs_unlock(req.which_request_type) && !studio_unlocked()) {
+        LOG_WRN("BLE management change refused: Studio is locked");
+        set_error(resp, "Unlock required");
+        return true;
+    }
+
+    int rc;
+    switch (req.which_request_type) {
+        case zmk_ble_management_Request_get_profiles_tag:
+            rc = handle_get_profiles(resp);
+            break;
+        case zmk_ble_management_Request_set_profile_name_tag:
+            rc = handle_set_profile_name(&req.request_type.set_profile_name,
+                                         resp);
+            break;
+        case zmk_ble_management_Request_switch_profile_tag:
+            rc = handle_switch_profile(&req.request_type.switch_profile, resp);
+            break;
+        case zmk_ble_management_Request_unpair_profile_tag:
+            rc = handle_unpair_profile(&req.request_type.unpair_profile, resp);
+            break;
+        case zmk_ble_management_Request_get_split_info_tag:
+            rc = handle_get_split_info(resp);
+            break;
+        case zmk_ble_management_Request_forget_split_bond_tag:
+            rc = handle_forget_split_bond(resp);
+            break;
+        case zmk_ble_management_Request_set_output_priority_tag:
+            rc = handle_set_output_priority(
+                &req.request_type.set_output_priority, resp);
+            break;
+        case zmk_ble_management_Request_get_output_priority_tag:
+            rc = handle_get_output_priority(resp);
+            break;
+        default:
+            LOG_WRN("Unsupported request type: %d", req.which_request_type);
+            rc = -ENOTSUP;
+    }
+
+    if (rc != 0) {
+        char message[sizeof(resp->response_type.error.message)];
+        snprintf(message, sizeof(message), "Failed to process request: %d",
+                 rc);
+        set_error(resp, message);
+    }
+    return true;
+}

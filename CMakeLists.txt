@@ -6,8 +6,11 @@ if(CONFIG_ZMK_BLE_MANAGEMENT)
     # target_sources(app PRIVATE ...)
 
     if(CONFIG_ZMK_BLE_MANAGEMENT_STUDIO_RPC)
-        file(GLOB_RECURSE C_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
-        target_sources(app PRIVATE ${C_FILES})
+        target_sources(app PRIVATE src/studio/ble_management_handler.c)
+        # Profile labels exist only with Bluetooth host profiles.
+        if(CONFIG_ZMK_BLE)
+            target_sources(app PRIVATE src/profile_labels.c)
+        endif()
 
         list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/modules/nanopb)
         include(nanopb)

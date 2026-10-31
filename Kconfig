@@ -5,6 +5,15 @@ if ZMK_BLE_MANAGEMENT
 
 config ZMK_BLE_MANAGEMENT_STUDIO_RPC
     bool "Enable BLE management custom Studio RPC"
-    depends on ZMK_STUDIO
+    # Studio RPC runs only on a standalone keyboard or a split central.
+    depends on ZMK_STUDIO_RPC && (!ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL)
 
 endif
+
+config ZMK_MODULE_BLE_MANAGEMENT_LOG_LEVEL
+    int "zmk-module-ble-management log level (0 off, 1 error, 2 warning, 3 info, 4 debug)"
+    range 0 4
+    default 3
+    help
+      Logs contain operational state and numeric diagnostics, never input
+      contents, user labels, peer addresses or authentication material.

@@ -52,8 +52,10 @@ message UnpairProfileResponse {
 message SplitInfo {
     bool is_split = 1;
     bool is_central = 2;
-    bool peripheral_connected = 3;  // For central: is peripheral connected
-    bool central_bonded = 4;        // For peripheral: is central bonded
+    bool peripheral_connected = 3;  // For central: is a peripheral connected
+    // For peripheral: is central bonded. Always false: Studio RPC runs only on
+    // the central.
+    bool central_bonded = 4;
 }
 
 message GetSplitInfoRequest {}
@@ -62,7 +64,9 @@ message GetSplitInfoResponse {
     SplitInfo info = 1;
 }
 
-// Forget split keyboard bond (for resetting split connection)
+// Clears the bond of every host profile and selects profile 0, like
+// &bt BT_CLR_ALL. The bond between split halves is kept; the name is
+// unchanged for wire compatibility.
 message ForgetSplitBondRequest {}
 
 message ForgetSplitBondResponse {
