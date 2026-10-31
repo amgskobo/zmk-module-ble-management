@@ -1,3 +1,5 @@
+import { useConnectionKey, useRequestLifetime } from "../requestLifetime";
+import { errorKind } from "../logPrivacy";
 /**
  * OutputPriorityManager Component
  *
@@ -18,7 +20,15 @@ import {
 import "./OutputPriorityManager.css";
 
 export function OutputPriorityManager() {
+  const app = useContext(ZMKAppContext);
+  const index = app?.findSubsystem(SUBSYSTEM_IDENTIFIER)?.index;
+  const key = useConnectionKey(app?.state.connection, index);
+  return <OutputPriorityManagerState key={key} />;
+}
+
+function OutputPriorityManagerState() {
   const zmkApp = useContext(ZMKAppContext);
+  const beginRequest = useRequestLifetime();
   const [currentPriority, setCurrentPriority] = useState<OutputPriority | null>(
     null
   );
@@ -32,6 +42,8 @@ export function OutputPriorityManager() {
     async () => {
       if (!zmkApp?.state.connection || !subsystem) return;
 
+      const active = beginRequest();
+      if (!active()) return;
       setIsLoading(true);
       setError(null);
 
@@ -47,6 +59,7 @@ export function OutputPriorityManager() {
 
         const payload = Request.encode(request).finish();
         const responsePayload = await service.callRPC(payload);
+        if (!active()) return;
 
         if (responsePayload) {
           const resp = Response.decode(responsePayload);
@@ -57,16 +70,17 @@ export function OutputPriorityManager() {
           }
         }
       } catch (err) {
-        console.error("Failed to load output priority:", err);
+        if (!active()) return;
+        console.error("Failed to load output priority:", errorKind(err));
         setError(
           `Failed to load output priority: ${err instanceof Error ? err.message : "Unknown error"}`
         );
       } finally {
-        setIsLoading(false);
+        if (active()) setIsLoading(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [zmkApp?.state.connection, subsystem?.index]
+    [zmkApp?.state.connection, subsystem?.index, beginRequest]
   );
 
   useEffect(() => {
@@ -79,6 +93,8 @@ export function OutputPriorityManager() {
   const setOutputPriority = async (priority: OutputPriority) => {
     if (!zmkApp?.state.connection || !subsystem) return;
 
+    const active = beginRequest();
+    if (!active()) return;
     setIsLoading(true);
     setError(null);
 
@@ -94,6 +110,7 @@ export function OutputPriorityManager() {
 
       const payload = Request.encode(request).finish();
       const responsePayload = await service.callRPC(payload);
+      if (!active()) return;
 
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
@@ -106,12 +123,13 @@ export function OutputPriorityManager() {
         }
       }
     } catch (err) {
-      console.error("Failed to set output priority:", err);
+      if (!active()) return;
+      console.error("Failed to set output priority:", errorKind(err));
       setError(
         `Failed to set output priority: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
-      setIsLoading(false);
+      if (active()) setIsLoading(false);
     }
   };
 

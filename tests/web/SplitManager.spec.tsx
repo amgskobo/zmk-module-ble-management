@@ -7,8 +7,8 @@ import {
   createConnectedMockZMKApp,
   ZMKAppProvider,
 } from "@cormoran/zmk-studio-react-hook/testing";
-import { SplitManager } from "../src/components/SplitManager";
-import { SUBSYSTEM_IDENTIFIER } from "../src/App";
+import { SplitManager } from "../../web/src/components/SplitManager";
+import { SUBSYSTEM_IDENTIFIER } from "../../web/src/App";
 
 // Mock console.error to avoid cluttering test output
 const originalError = console.error;
@@ -30,7 +30,7 @@ describe("SplitManager Component", () => {
       const { container } = render(
         <ZMKAppProvider value={mockZMKApp}>
           <SplitManager />
-        </ZMKAppProvider>
+        </ZMKAppProvider>,
       );
 
       // Component should not render initially until it determines if it's a split keyboard
@@ -49,7 +49,7 @@ describe("SplitManager Component", () => {
       const { container } = render(
         <ZMKAppProvider value={mockZMKApp}>
           <SplitManager />
-        </ZMKAppProvider>
+        </ZMKAppProvider>,
       );
 
       expect(container.firstChild).toBeNull();

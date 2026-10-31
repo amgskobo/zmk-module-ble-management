@@ -7,8 +7,8 @@ import {
   createConnectedMockZMKApp,
   ZMKAppProvider,
 } from "@cormoran/zmk-studio-react-hook/testing";
-import { ProfileManager } from "../src/components/ProfileManager";
-import { SUBSYSTEM_IDENTIFIER } from "../src/App";
+import { ProfileManager } from "../../web/src/components/ProfileManager";
+import { SUBSYSTEM_IDENTIFIER } from "../../web/src/App";
 
 // Mock console.error to avoid cluttering test output
 const originalError = console.error;
@@ -30,7 +30,7 @@ describe("ProfileManager Component", () => {
       render(
         <ZMKAppProvider value={mockZMKApp}>
           <ProfileManager />
-        </ZMKAppProvider>
+        </ZMKAppProvider>,
       );
 
       expect(screen.getByText(/Bluetooth Profiles/i)).toBeInTheDocument();
@@ -48,11 +48,11 @@ describe("ProfileManager Component", () => {
       render(
         <ZMKAppProvider value={mockZMKApp}>
           <ProfileManager />
-        </ZMKAppProvider>
+        </ZMKAppProvider>,
       );
 
       expect(
-        screen.getByText(/BLE Management subsystem not found/i)
+        screen.getByText(/BLE Management subsystem not found/i),
       ).toBeInTheDocument();
     });
   });
@@ -63,7 +63,7 @@ describe("ProfileManager Component", () => {
 
       // Component should return a warning section when no context
       expect(
-        screen.getByText(/BLE Management subsystem not found/i)
+        screen.getByText(/BLE Management subsystem not found/i),
       ).toBeInTheDocument();
     });
   });

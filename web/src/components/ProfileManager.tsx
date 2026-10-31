@@ -1,3 +1,5 @@
+import { useConnectionKey, useRequestLifetime } from "../requestLifetime";
+import { errorKind } from "../logPrivacy";
 /**
  * ProfileManager Component
  *
@@ -18,7 +20,15 @@ import {
 import "./ProfileManager.css";
 
 export function ProfileManager() {
+  const app = useContext(ZMKAppContext);
+  const index = app?.findSubsystem(SUBSYSTEM_IDENTIFIER)?.index;
+  const key = useConnectionKey(app?.state.connection, index);
+  return <ProfileManagerState key={key} />;
+}
+
+function ProfileManagerState() {
   const zmkApp = useContext(ZMKAppContext);
+  const beginRequest = useRequestLifetime();
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [maxProfiles, setMaxProfiles] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +43,8 @@ export function ProfileManager() {
     async () => {
       if (!zmkApp?.state.connection || !subsystem) return;
 
+      const active = beginRequest();
+      if (!active()) return;
       setIsLoading(true);
       setError(null);
 
@@ -48,6 +60,7 @@ export function ProfileManager() {
 
         const payload = Request.encode(request).finish();
         const responsePayload = await service.callRPC(payload);
+        if (!active()) return;
 
         if (responsePayload) {
           const resp = Response.decode(responsePayload);
@@ -59,16 +72,17 @@ export function ProfileManager() {
           }
         }
       } catch (err) {
-        console.error("Failed to load profiles:", err);
+        if (!active()) return;
+        console.error("Failed to load profiles:", errorKind(err));
         setError(
           `Failed to load profiles: ${err instanceof Error ? err.message : "Unknown error"}`
         );
       } finally {
-        setIsLoading(false);
+        if (active()) setIsLoading(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [zmkApp?.state.connection, subsystem?.index]
+    [zmkApp?.state.connection, subsystem?.index, beginRequest]
   );
 
   useEffect(() => {
@@ -81,6 +95,8 @@ export function ProfileManager() {
   const switchProfile = async (index: number) => {
     if (!zmkApp?.state.connection || !subsystem) return;
 
+    const active = beginRequest();
+    if (!active()) return;
     setIsLoading(true);
     setError(null);
 
@@ -96,6 +112,7 @@ export function ProfileManager() {
 
       const payload = Request.encode(request).finish();
       const responsePayload = await service.callRPC(payload);
+      if (!active()) return;
 
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
@@ -109,12 +126,13 @@ export function ProfileManager() {
         }
       }
     } catch (err) {
-      console.error("Failed to switch profile:", err);
+      if (!active()) return;
+      console.error("Failed to switch profile:", errorKind(err));
       setError(
         `Failed to switch profile: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
-      setIsLoading(false);
+      if (active()) setIsLoading(false);
     }
   };
 
@@ -122,6 +140,8 @@ export function ProfileManager() {
     if (!zmkApp?.state.connection || !subsystem) return;
     if (!confirm("Are you sure you want to unpair this device?")) return;
 
+    const active = beginRequest();
+    if (!active()) return;
     setIsLoading(true);
     setError(null);
 
@@ -137,6 +157,7 @@ export function ProfileManager() {
 
       const payload = Request.encode(request).finish();
       const responsePayload = await service.callRPC(payload);
+      if (!active()) return;
 
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
@@ -149,18 +170,21 @@ export function ProfileManager() {
         }
       }
     } catch (err) {
-      console.error("Failed to unpair profile:", err);
+      if (!active()) return;
+      console.error("Failed to unpair profile:", errorKind(err));
       setError(
         `Failed to unpair profile: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
-      setIsLoading(false);
+      if (active()) setIsLoading(false);
     }
   };
 
   const saveProfileName = async (index: number, name: string) => {
     if (!zmkApp?.state.connection || !subsystem) return;
 
+    const active = beginRequest();
+    if (!active()) return;
     setIsLoading(true);
     setError(null);
 
@@ -176,6 +200,7 @@ export function ProfileManager() {
 
       const payload = Request.encode(request).finish();
       const responsePayload = await service.callRPC(payload);
+      if (!active()) return;
 
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
@@ -190,12 +215,13 @@ export function ProfileManager() {
         }
       }
     } catch (err) {
-      console.error("Failed to save profile name:", err);
+      if (!active()) return;
+      console.error("Failed to save profile name:", errorKind(err));
       setError(
         `Failed to save profile name: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
-      setIsLoading(false);
+      if (active()) setIsLoading(false);
     }
   };
 

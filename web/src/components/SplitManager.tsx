@@ -1,3 +1,5 @@
+import { useConnectionKey, useRequestLifetime } from "../requestLifetime";
+import { errorKind } from "../logPrivacy";
 /**
  * SplitManager Component
  *
@@ -18,10 +20,19 @@ import {
 import "./SplitManager.css";
 
 export function SplitManager() {
+  const app = useContext(ZMKAppContext);
+  const index = app?.findSubsystem(SUBSYSTEM_IDENTIFIER)?.index;
+  const key = useConnectionKey(app?.state.connection, index);
+  return <SplitManagerState key={key} />;
+}
+
+function SplitManagerState() {
   const zmkApp = useContext(ZMKAppContext);
+  const beginRequest = useRequestLifetime();
   const [splitInfo, setSplitInfo] = useState<SplitInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoadFailed, setHasLoadFailed] = useState(false);
 
   const subsystem = zmkApp?.findSubsystem(SUBSYSTEM_IDENTIFIER);
 
@@ -30,6 +41,8 @@ export function SplitManager() {
     async () => {
       if (!zmkApp?.state.connection || !subsystem) return;
 
+      const active = beginRequest();
+      if (!active()) return;
       setIsLoading(true);
       setError(null);
 
@@ -45,26 +58,34 @@ export function SplitManager() {
 
         const payload = Request.encode(request).finish();
         const responsePayload = await service.callRPC(payload);
+        if (!active()) return;
+        if (!responsePayload) {
+          throw new Error("No split information received");
+        }
 
-        if (responsePayload) {
-          const resp = Response.decode(responsePayload);
-          if (resp.getSplitInfo?.info) {
-            setSplitInfo(resp.getSplitInfo.info);
-          } else if (resp.error) {
-            setError(resp.error.message);
-          }
+        const resp = Response.decode(responsePayload);
+        if (resp.getSplitInfo?.info) {
+          setSplitInfo(resp.getSplitInfo.info);
+          setHasLoadFailed(false);
+        } else if (resp.error) {
+          setError(resp.error.message);
+          setHasLoadFailed(true);
+        } else {
+          throw new Error("Unexpected split information response");
         }
       } catch (err) {
-        console.error("Failed to load split info:", err);
+        if (!active()) return;
+        console.error("Failed to load split info:", errorKind(err));
         setError(
           `Failed to load split info: ${err instanceof Error ? err.message : "Unknown error"}`
         );
+        setHasLoadFailed(true);
       } finally {
-        setIsLoading(false);
+        if (active()) setIsLoading(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [zmkApp?.state.connection, subsystem?.index]
+    [zmkApp?.state.connection, subsystem?.index, beginRequest]
   );
 
   useEffect(() => {
@@ -78,11 +99,13 @@ export function SplitManager() {
     if (!zmkApp?.state.connection || !subsystem) return;
     if (
       !confirm(
-        "Are you sure you want to forget split keyboard bonds? This will clear all pairing information."
+        "Clear the pairing of every host profile? Each host must pair again. The bond between the keyboard halves is kept."
       )
     )
       return;
 
+    const active = beginRequest();
+    if (!active()) return;
     setIsLoading(true);
     setError(null);
 
@@ -98,27 +121,29 @@ export function SplitManager() {
 
       const payload = Request.encode(request).finish();
       const responsePayload = await service.callRPC(payload);
+      if (!active()) return;
 
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
         if (resp.forgetSplitBond?.success) {
           alert(
-            "Split bonds cleared successfully. You may need to re-pair the keyboard halves."
+            "Host pairings cleared and profile 0 selected. Pair each host again."
           );
           await loadSplitInfo();
         } else if (resp.error) {
           setError(resp.error.message);
         } else {
-          setError("Failed to forget split bonds");
+          setError("Failed to clear host pairings");
         }
       }
     } catch (err) {
-      console.error("Failed to forget split bonds:", err);
+      if (!active()) return;
+      console.error("Failed to clear host pairings:", errorKind(err));
       setError(
-        `Failed to forget split bonds: ${err instanceof Error ? err.message : "Unknown error"}`
+        `Failed to clear host pairings: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
-      setIsLoading(false);
+      if (active()) setIsLoading(false);
     }
   };
 
@@ -126,8 +151,9 @@ export function SplitManager() {
     return null;
   }
 
-  // Don't show split manager if not a split keyboard
-  if (!splitInfo?.isSplit) {
+  // Keep the initial unknown state and confirmed non-split devices hidden.
+  // A failed read needs a recovery view that remains visible during its retry.
+  if (splitInfo?.isSplit === false || (!splitInfo && !hasLoadFailed)) {
     return null;
   }
 
@@ -176,16 +202,16 @@ export function SplitManager() {
 
           <div className="split-actions">
             <p className="warning-text">
-              ⚠️ If you're experiencing connection issues between keyboard
-              halves, you can reset the split connection below. This will clear
-              all pairing information and you'll need to re-pair the halves.
+              ⚠️ This clears the pairing of every host profile and selects
+              profile 0. It does not reset the bond between the keyboard halves;
+              to re-pair the halves, flash settings_reset to both of them.
             </p>
             <button
               className="btn btn-danger"
               onClick={forgetSplitBond}
               disabled={isLoading}
             >
-              🔄 Reset Split Connection
+              🔄 Clear All Host Pairings
             </button>
           </div>
         </div>

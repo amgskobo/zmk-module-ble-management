@@ -7,7 +7,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { setupZMKMocks } from "@cormoran/zmk-studio-react-hook/testing";
-import App from "../src/App";
+import App from "../../web/src/App";
 
 // Mock the ZMK client
 jest.mock("@zmkfirmware/zmk-studio-ts-client", () => ({
@@ -28,10 +28,10 @@ describe("App Component", () => {
         screen.getByRole("heading", {
           name: /📡 ZMK BLE Management/i,
           level: 1,
-        })
+        }),
       ).toBeInTheDocument();
       expect(
-        screen.getByText(/Manage Bluetooth connections/i)
+        screen.getByText(/Manage Bluetooth connections/i),
       ).toBeInTheDocument();
     });
 
@@ -45,7 +45,9 @@ describe("App Component", () => {
       render(<App />);
 
       expect(
-        screen.getByText(/Easily manage your keyboard's Bluetooth connections/i)
+        screen.getByText(
+          /Easily manage your keyboard's Bluetooth connections/i,
+        ),
       ).toBeInTheDocument();
     });
   });
@@ -79,7 +81,7 @@ describe("App Component", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/Connected to: Test Keyboard/i)
+          screen.getByText(/Connected to: Test Keyboard/i),
         ).toBeInTheDocument();
       });
 
