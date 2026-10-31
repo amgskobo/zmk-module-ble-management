@@ -32,7 +32,11 @@ jobs:
           python3 -m venv /tmp/fork-review-checkers
           /tmp/fork-review-checkers/bin/python -m pip install pre-commit==4.7.0
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - uses: ./.github/actions/west-init
+      - name: Prepare selected west workspace
+        run: |
+          west init -l west --mf west-test-standalone.yml
+          west update --narrow
+          west zephyr-export
       - name: Check owned tests and tools
         if: ${{ hashFiles('.pre-commit-config.yaml') != '' }}
         env:
