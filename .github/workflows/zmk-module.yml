@@ -5,6 +5,8 @@ on:
     branches: ["**"]
     paths-ignore:
       - "web/**"
+      - "tests/web/**"
+      - "tests/run-web.sh"
       - ".github/workflows/web-ui.yml"
 
 jobs:
@@ -12,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: zmkfirmware/zmk-build-arm:stable
+      image: zmkfirmware/zmk-build-arm@sha256:edb1c953438c6f720ddb79c3762f3972013b7fbbaf4fff3592fc869983e7afc5
     name: Build
     steps:
       - name: Checkout
@@ -34,10 +36,22 @@ jobs:
           west update --narrow
           west zephyr-export
       - name: Test
-        run: python3 -m unittest -v
+        run: OWNER_TEST_OUTPUT="$PWD/owner-test-output" python3 -m unittest discover -v -s tests -p test_owner.py
       - name: Upload Build Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zmk-firmware
+          include-hidden-files: true
           path: |
-            build/*/zephyr/zmk.uf2
+            owner-test-output/**/*.uf2
+            owner-test-output/**/*.elf
+            !owner-test-output/**/zephyr_pre*.elf
+            owner-test-output/**/*.exe
+            owner-test-output/**/*.log
+            owner-test-output/**/*.diff
+            owner-test-output/**/*.json
+            owner-test-output/**/*.dts
+            owner-test-output/**/.config
+            owner-test-output/**/CMakeCache.txt
+            owner-test-output/**/zephyr_modules.txt
