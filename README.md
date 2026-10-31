@@ -1,5 +1,13 @@
 # ZMK BLE Management Module
 
+## Reviewed fork
+
+This fork's reviewed source is on `codex/ble-management-review` in
+[`amgskobo/zmk-module-ble-management`](https://github.com/amgskobo/zmk-module-ble-management/tree/codex/ble-management-review).
+Select that repository URL and revision in the module's west project entry.
+Keep the module's documented imports enabled where required. The original
+upstream installation examples below describe the upstream repository.
+
 This ZMK module provides a web-based user interface for managing Bluetooth Low Energy (BLE) connections on your ZMK keyboard. It makes it easy to view paired devices, switch between profiles, customize names, and manage split keyboard connections.
 
 ## Features
@@ -9,6 +17,26 @@ This ZMK module provides a web-based user interface for managing Bluetooth Low E
 - **Quick Switching**: Easily switch between paired devices
 - **Unpair Devices**: Remove unwanted pairings
 - **Persistent Storage**: Custom device names are saved and tied to BLE addresses
+
+Names are keyed by both Bluetooth address type and MAC, so public and random
+addresses with identical MAC bytes remain distinct. Existing MAC-only keys are
+read as public addresses for compatibility; new typed keys take precedence.
+An old random-address name cannot recover its previously omitted type and may
+need to be assigned again. A name follows its host's bond: unpairing deletes it,
+and the name of a host that is no longer bonded (for example after a `&bt`
+clear) is reclaimed when a new name needs its slot. An empty name deletes the
+name. Failed or malformed settings reads leave the live name cache unchanged. Name setters retain the existing RAM-before-storage
+policy, so a persistence error can leave a changed RAM name until reboot.
+
+The profile list and split status can be read while Studio is locked, but the
+host addresses stay hidden until Studio is unlocked, because a bonded host's
+address identifies that device. Renaming, switching and unpairing profiles,
+clearing the host pairings and changing the output need an unlocked Studio; a
+locked keyboard answers "Unlock required" and changes nothing.
+
+The profile RPC schema has room for five entries. Configurations with more
+logical ZMK profiles return an explicit error rather than writing past that
+capacity. This does not change the number of profiles configured in firmware.
 
 ## Screenshots
 
@@ -77,12 +105,20 @@ west zephyr-export
 
 **Firmware Tests:**
 
+The hardware-independent GetSplitInfo request/response regression uses the
+selected real nanopb codec and runs standalone, central and peripheral roles
+under optimization and ASan/UBSan. See [its contract](tests/split-info/README.md):
+
+```bash
+python3 tests/split-info/run.py
+```
+
 ```bash
 # Run all firmware tests
-python -m unittest
+python -m unittest discover -s tests -p test_owner.py
 
 # Run specific test
-python -m unittest test.WestCommandsTests.test_zmk_test
+python -m unittest test_owner.WestCommandsTests.test_zmk_test
 ```
 
 **Web UI Tests:**
@@ -161,8 +197,9 @@ Keyboard Firmware
 
 ### Split keyboard issues
 
-- Use the "Reset Split Connection" button to clear bonds
-- Re-pair the keyboard halves after reset
+- "Clear All Host Pairings" clears the pairing of every host profile and
+  selects profile 0; it does not reset the bond between the halves
+- To re-pair the halves, flash `settings_reset` to both of them
 
 ## Contributing
 

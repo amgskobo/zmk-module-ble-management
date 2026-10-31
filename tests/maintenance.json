@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "owner": "zmk-module-ble-management",
+  "supported_cores": ["dya"],
+  "unsupported_core_status": "NOT APPLICABLE",
+  "commands": [
+    "python3 -m unittest discover -v -s tests -p test_owner.py",
+    "bash tests/run-web.sh"
+  ],
+  "coverage_map": "tests/README.md",
+  "web_lifecycle_fixture": "tests/web/lifecycle.spec.tsx: eighteen scenarios across three panels for connection/index ownership of success, error, loading, finally, mutation follow-up and unmount; seventeen original scenarios retained; schema generated before collection.",
+  "preserved_assertions": "Relocated fixtures retain their prior assertions; no snapshot auto-accept or unique assertion removal.",
+  "execution": {
+    "quick": "All behavioral scenarios once; sanitizer variants where supported.",
+    "full": "Same scenarios plus relevant optimization, ABI, role, kernel and supported-core checks.",
+    "outputs": "Use a fresh evidence directory; existing evidence is never overwritten."
+  },
+  "gaps": [
+    "Physical USB/BLE/split delivery, timing, power and retention require matching production-board evidence."
+  ],
+  "native_verification": "tests/native_verifier.py: actual exit, registered test completion, raw ordered logs, unchanged snapshots, identical binary repeated three times.",
+  "web_split_recovery_fixture": {
+    "fixture": "tests/web/splitRetry.spec.tsx",
+    "scenarios": 6,
+    "contract": "Initial rejection, actual SDK timeout and RPC error expose recovery; pending/successful/failed same-connection retry, retired retry isolation, initial-unknown and confirmed-non-split hiding. Five assertions fail before repair; original35 scenarios retained."
+  },
+  "web_additional_ownership_fixture": {
+    "fixture": "tests/web/panelOwnership.spec.tsx",
+    "scenarios": 16,
+    "contract": "Six same-connection subsystem-index success/error replacements across3 panels; ten Unpair/Save-name current success/RPC-error/rejection, guarded follow-up/loading, and retired success/error cases. No lifetime-helper or other panel behavior change."
+  },
+  "web_split_response_boundary_fixture": {
+    "fixture": "tests/web/splitResponseBoundary.spec.tsx",
+    "scenarios": 5,
+    "contract": "Absent SDK custom payload, empty/wrong-kind response and missing split info expose failure and same-connection retry; all four fail before validation repair. Retired absent-payload control stays isolated; all57 prior scenarios retained."
+  }
+}

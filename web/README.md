@@ -1,191 +1,74 @@
-# ZMK Module Template - Web Frontend
+# BLE Management Web UI
 
-This is a minimal web application template for interacting with ZMK firmware
-modules that implement custom Studio RPC subsystems.
+This React client manages keyboard BLE profiles, profile labels, output
+preference and split connection information through the `cormoran_ble` custom
+Studio RPC subsystem. The current standalone connection screen offers **Connect
+via Serial**. Managing BLE profiles does not require the browser to connect
+through BLE; use the keyboard's Studio serial interface.
 
-## Features
+The keyboard must enable this module and DYA custom Studio RPC. Firmware
+permission checks still apply to each request. A successful connection does not
+establish that a profile change or split operation reached a physical peer.
 
-- **Device Connection**: Connect to ZMK devices via Bluetooth (GATT) or Serial
-- **Custom RPC**: Communicate with your custom firmware module using protobuf
-- **React + TypeScript**: Modern web development with Vite for fast builds
-- **react-zmk-studio**: Uses the `@cormoran/zmk-studio-react-hook` library for
-  simplified ZMK integration
+## Current sources
 
-## Quick Start
+- [App.tsx](src/App.tsx) owns the Serial connection controls and subsystem ID.
+- `src/components/` contains the profile, split and output-preference views.
+- The wire schema is
+  [ble_management.proto](../proto/zmk/ble_management/ble_management.proto).
+- `npm run generate` uses `buf.gen.yaml` to generate ignored TypeScript messages
+  under `src/proto/zmk/ble_management/`. Do not edit generated files by hand.
+- Executable UI assertions and Jest configuration live in `../tests/web/`.
+  Application sources and installed packages remain in `web/`.
 
-```bash
-# Install dependencies
-npm install
+## Development and verification
 
-# Generate TypeScript types from proto
+Use the checked-in npm lockfile when preparing dependencies. From the owner root:
+
+```sh
+# Explicit dependency preparation, when needed
+cd web
+npm ci
 npm run generate
-
-# Run development server
 npm run dev
-
-# Build for production
-npm run build
-
-# Run tests
-npm test
 ```
 
-## Project Structure
+Run the canonical Web checks from the owner root after preparing dependencies:
 
-```
-src/
-├── main.tsx              # React entry point
-├── App.tsx               # Main application with connection UI
-├── App.css               # Styles
-└── proto/                # Generated protobuf TypeScript types
-    └── zmk/template/
-        └── custom.ts
-
-test/
-├── App.spec.tsx              # Tests for App component
-└── RPCTestSection.spec.tsx   # Tests for RPC functionality
+```sh
+bash tests/run-web.sh
 ```
 
-## How It Works
+From `web/`, tests, watch and coverage generate the current schema before Jest
+collection. `npm run build` generates types, checks TypeScript and builds the
+client. `npm run lint` checks the application and owner test files. Each panel's
+state belongs to its connection and subsystem; late request results, errors,
+completion and mutation follow-up reads retire with that source. Tests use
+controlled connection/RPC helpers; they do not establish physical USB/BLE/split,
+bond storage, radio delivery or access-control behavior on a board. See the
+[owner test guide](../tests/README.md) for the separate firmware checks.
 
-### 1. Protocol Definition
+An initial split-status failure shows its error and a Refresh action without
+requiring a reconnect. The recovery view remains visible while retrying and
+retires with its connection/subsystem. Initial unknown state and a confirmed
+non-split keyboard remain hidden.
+Missing payloads and responses without split information are retrieval errors
+and expose the same retry action.
 
-The protobuf schema is defined in `../proto/zmk/template/custom.proto`:
+Building local output does not publish the application.
 
-```proto
-message Request {
-    oneof request_type {
-        SampleRequest sample = 1;
-    }
-}
+## Console privacy
 
-message Response {
-    oneof response_type {
-        ErrorResponse error = 1;
-        SampleResponse sample = 2;
-    }
-}
-```
+Console failures include a fixed operation label and an allowlisted error category.
+Messages, stacks, causes, arbitrary error names, profile/device names, addresses,
+setting keys, prefixes, and values are not console arguments. UI errors and
+intentional profile displays retain their existing behavior. Individual RPC
+payloads and notifications are not logged.
+The Vite plugin also sanitizes executable console output in the two locked Studio SDKs. New SDK log sites stop the build for review; both SDKs are excluded from development prebundling so the same transform applies in development and production. Browser-generated diagnostics and unrelated browser extensions are outside this application's control.
 
-### 2. Code Generation
+## Dependency security
 
-TypeScript types are generated using `ts-proto`:
-
-```bash
-npm run generate
-```
-
-This runs `buf generate` which uses the configuration in `buf.gen.yaml`.
-
-### 3. Using react-zmk-studio
-
-The app uses the `@cormoran/zmk-studio-react-hook` library:
-
-```typescript
-import { useZMKApp, ZMKCustomSubsystem } from "@cormoran/zmk-studio-react-hook";
-
-// Connect to device
-const { state, connect, findSubsystem, isConnected } = useZMKApp();
-
-// Find your subsystem
-const subsystem = findSubsystem("zmk__template");
-
-// Create service and make RPC calls
-const service = new ZMKCustomSubsystem(state.connection, subsystem.index);
-const response = await service.callRPC(payload);
-```
-
-## Testing
-
-This template includes Jest tests as a reference implementation for template users.
-
-### Running Tests
-
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run tests with coverage
-npm run test:coverage
-```
-
-### Test Structure
-
-The tests demonstrate how to use the `react-zmk-studio` test helpers:
-
-- **App.spec.tsx**: Basic rendering tests for the main application
-- **RPCTestSection.spec.tsx**: Tests showing how to mock ZMK connection and test
-  components that interact with devices
-
-### Writing Tests
-
-Use the test helpers from `@cormoran/zmk-studio-react-hook/testing`:
-
-```typescript
-import {
-  createConnectedMockZMKApp,
-  ZMKAppProvider,
-} from "@cormoran/zmk-studio-react-hook/testing";
-
-// Create a mock connected device with subsystems
-const mockZMKApp = createConnectedMockZMKApp({
-  deviceName: "Test Device",
-  subsystems: ["zmk__template"],
-});
-
-// Wrap your component with the provider
-render(
-  <ZMKAppProvider value={mockZMKApp}>
-    <YourComponent />
-  </ZMKAppProvider>
-);
-```
-
-See the test files in `./test/` for complete examples.
-
-## Customization
-
-To adapt this template for your own ZMK module:
-
-1. **Update the proto file**: Modify `../proto/zmk/template/custom.proto` with
-   your message types
-2. **Regenerate types**: Run `npm run generate`
-3. **Update subsystem identifier**: Change `SUBSYSTEM_IDENTIFIER` in `App.tsx`
-   to match your firmware registration
-4. **Update RPC logic**: Modify the request/response handling in `App.tsx`
-5. **Update tests**: Modify tests to match your custom subsystem identifier and
-   functionality
-
-## Dependencies
-
-- **@cormoran/zmk-studio-react-hook**: React hooks for ZMK Studio (includes
-  connection management and RPC utilities)
-- **@zmkfirmware/zmk-studio-ts-client**: Patched ZMK Studio TypeScript client
-  with custom RPC support
-- **ts-proto**: Protocol buffers code generator for TypeScript
-- **React 19**: Modern React with hooks
-- **Vite**: Fast build tool and dev server
-
-### Development Dependencies
-
-- **Jest**: Testing framework
-- **@testing-library/react**: React testing utilities
-- **ts-jest**: TypeScript support for Jest
-- **identity-obj-proxy**: CSS mock for testing
-
-## Development Notes
-
-- The `react-zmk-studio` directory contains a copy of the library for
-  reference - it's automatically built and linked via `package.json`
-- Proto generation uses `buf` and `ts-proto` for clean TypeScript types
-- Connection state is managed by the `useZMKApp` hook from react-zmk-studio
-- RPC calls are made through `ZMKCustomSubsystem` service class
-
-## See Also
-
-- [design.md](./design.md) - Detailed frontend architecture documentation
-- [react-zmk-studio/README.md](./react-zmk-studio/README.md) - react-zmk-studio
-  library documentation
+`package.json` overrides the Studio client's transitive `protobufjs` dependency
+to `7.6.5`, including the patched UTF-8 helper. Use `npm ci` with this lockfile.
+After changing dependencies, run `npm audit --omit=dev`, the Web tests and the
+production build.
