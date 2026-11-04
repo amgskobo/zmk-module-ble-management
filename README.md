@@ -25,7 +25,10 @@ An old random-address name cannot recover its previously omitted type and may
 need to be assigned again. A name follows its host's bond: unpairing deletes it,
 and the name of a host that is no longer bonded (for example after a `&bt`
 clear) is reclaimed when a new name needs its slot. An empty name deletes the
-name. Failed or malformed settings reads leave the live name cache unchanged. Name setters retain the existing RAM-before-storage
+name. A failed stale-record deletion refuses the new name and retains its
+existing cache slot; retrying after storage recovers can reclaim it safely.
+Open profiles have no host address or label target. Failed or malformed settings
+reads leave the live name cache unchanged. Name setters retain the existing RAM-before-storage
 policy, so a persistence error can leave a changed RAM name until reboot.
 
 The profile list and split status can be read while Studio is locked, but the
@@ -38,11 +41,41 @@ The profile RPC schema has room for five entries. Configurations with more
 logical ZMK profiles return an explicit error rather than writing past that
 capacity. This does not change the number of profiles configured in firmware.
 
-## Screenshots
+Clearing host pairings refreshes the profile panel and retires any previous
+name editor. Name inputs are disabled while a save is pending, and a failed
+save restores the unchanged draft for retry.
 
-| Output Priority Toggle         | Naming, un-pairing and switching profile |
-| ------------------------------ | ---------------------------------------- |
-| ![](./img/output_priority.png) | ![](./img/profile.png)                   |
+Renaming and unpairing include the expected peer's address bytes and address
+type. Firmware refuses a missing or already replaced identity; older clients
+that send only a profile index must be updated. Use
+matching firmware and Web versions. An editor retains the identity it opened,
+so a refresh cannot silently apply its draft to a replacement peer. Switching
+profiles continues to select a slot. A lock notification clears displayed
+addresses, peer identities and name drafts and retires pending profile replies;
+unlocking refreshes the list. Names are limited to 31 UTF-8 bytes.
+
+An admitted name change keeps its validated peer identity while settings
+storage waits, even if the profile is replaced meanwhile. Unpair checks the
+active slot and full peer identity again after profile selection returns,
+because selection can wait for Bluetooth controller commands. A change during
+that wait refuses the clear and leaves labels intact.
+
+Unpair remains limited by the selected DYA core's active-profile-only clear
+API. It cannot condition the clear on both an index and an expected peer, and
+independent changes during the core call or an intervening selection that
+returns to the same index are not transactionally excluded. Unpairing an
+inactive profile and restoring the original selection retain their existing
+behavior. This module does not claim a complete fix for those concurrent
+unpair or selection-restoration cases.
+
+## Interface
+
+The output-priority control selects USB or BLE when both are available.
+
+![Output priority control](./img/output_priority.png)
+
+The Bluetooth profile list shows each slot's connection state and offers
+controls to name a peer, switch profiles or unpair the displayed peer.
 
 ## Setup
 
@@ -105,9 +138,10 @@ west zephyr-export
 
 **Firmware Tests:**
 
-The hardware-independent GetSplitInfo request/response regression uses the
-selected real nanopb codec and runs standalone, central and peripheral roles
-under optimization and ASan/UBSan. See [its contract](tests/split-info/README.md):
+The hardware-independent RPC and storage regressions use the selected real
+nanopb codec and run standalone and split-central roles under optimization and
+ASan/UBSan, including the over-capacity profile guard. Studio RPC is excluded
+from a split peripheral. See [their contract](tests/split-info/README.md):
 
 ```bash
 python3 tests/split-info/run.py

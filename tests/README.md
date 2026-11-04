@@ -2,6 +2,16 @@
 
 This repository owns its executable test logic and fixtures under `tests/`.
 
+`tests/split-info/handler_test.c` adds the `peer-identity` real-codec scenario:
+legacy index-only rename/unpair, replacement address/type and missing identities
+leave bonds and labels unchanged; a current complete identity succeeds. Locked
+profile responses omit both display addresses and binary identities. Existing
+standalone/central, optimized/sanitized variants and three repeats are retained.
+`tests/web/peerIdentity.spec.tsx` exercises outgoing identities, an edit across
+peer replacement, lock retirement and UTF-8 name bounds through the real owner
+codec and provider. These controlled boundaries do not establish atomicity with
+an independently changing core bond lifecycle or physical BLE acceptance.
+
 `tests/web/lifecycle.spec.tsx` adds eighteen actual-provider scenarios across
 Profile, Output Priority and Split panels. Each panel preserves connection/index
 ownership for late load success/error, old completion versus a new refresh,
@@ -39,6 +49,32 @@ These twenty-two cases add to all thirty-five previous Web assertions; the
 request-lifetime helper and original fixtures are unchanged. The tests use the
 actual provider/service/schema with a controlled call_rpc boundary; they do not
 establish physical transport or cancel already admitted device operations.
+
+`tests/split-info/handler_test.c` also retains five focused blocking-boundary
+cases for rename/reclaim, direct label save/delete, and Unpair selection/index
+or peer replacement. They use the actual owner dispatcher, label store and
+nanopb codecs with controlled settings/HCI-wait boundaries. The corresponding
+source operators and exact detecting assertions are documented in
+[split-info/README.md](split-info/README.md). All original groups, supported
+roles, optimization/sanitizer variants and repeats remain selected.
+
+BLE-1's unpair portion remains incomplete at the core boundary. The module
+rechecks after `zmk_ble_prof_select()` returns, but the selected core cannot
+conditionally clear an index and peer atomically or distinguish every
+selection-restoration ABA. Existing inactive-peer clear/restore behavior is
+preserved; the added cases do not claim to cover independent mutations inside
+the core clear API or physical Bluetooth timing.
+
+`tests/web/managementMutations.spec.tsx` adds twelve cases using actual App panel wiring,
+provider/service and owner codec with the connection-control and RPC boundaries
+controlled. Host-pairing clears refresh the affected profiles, retire old name
+drafts and hide stale cards even if the new read fails. Refused clears and replies
+from replaced connections cannot refresh current profiles. Pending saves disable
+the input; a rejected save restores the same editable draft. A pending profile
+read or name save from before a successful clear cannot finish, fail or issue
+follow-up reads into the remounted profile panel. An encoded name-save refusal
+keeps the same draft for a successful retry. The original component, mutation
+and lifetime assertions remain enabled.
 
 ## Current test ownership and compatibility
 

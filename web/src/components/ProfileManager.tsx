@@ -12,18 +12,24 @@ import {
   ZMKAppContext,
 } from "@cormoran/zmk-studio-react-hook";
 import { SUBSYSTEM_IDENTIFIER } from "../App";
+import { LockState } from "@zmkfirmware/zmk-studio-ts-client/core";
 import {
   Request,
   Response,
   ProfileInfo,
+  PeerIdentity,
 } from "../proto/zmk/ble_management/ble_management";
 import "./ProfileManager.css";
 
-export function ProfileManager() {
+export function ProfileManager({
+  refreshRevision = 0,
+}: {
+  refreshRevision?: number;
+}) {
   const app = useContext(ZMKAppContext);
   const index = app?.findSubsystem(SUBSYSTEM_IDENTIFIER)?.index;
   const key = useConnectionKey(app?.state.connection, index);
-  return <ProfileManagerState key={key} />;
+  return <ProfileManagerState key={`${key}:${refreshRevision}`} />;
 }
 
 function ProfileManagerState() {
@@ -35,6 +41,7 @@ function ProfileManagerState() {
   const [error, setError] = useState<string | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+  const [editPeer, setEditPeer] = useState<PeerIdentity | undefined>();
 
   const subsystem = zmkApp?.findSubsystem(SUBSYSTEM_IDENTIFIER);
 
@@ -92,6 +99,43 @@ function ProfileManagerState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subsystem?.index, zmkApp?.state.connection, loadProfiles]);
 
+  useEffect(() => {
+    if (!zmkApp?.state.connection || !subsystem) return;
+    let current = true;
+    const unsubscribe = zmkApp.onNotification({
+      type: "core",
+      callback: (notification) => {
+        if (!current || notification.lockStateChanged === undefined) return;
+        // Retire pending results synchronously, before React renders redacted
+        // state. A reply admitted before relocking must not restore addresses.
+        beginRequest();
+        if (
+          notification.lockStateChanged ===
+          LockState.ZMK_STUDIO_CORE_LOCK_STATE_UNLOCKED
+        ) {
+          void loadProfiles();
+          return;
+        }
+        setProfiles((previous) =>
+          previous.map((profile) => ({
+            ...profile,
+            address: "",
+            peerIdentity: undefined,
+          }))
+        );
+        setEditingIndex(null);
+        setEditName("");
+        setEditPeer(undefined);
+        setIsLoading(false);
+        setError(null);
+      },
+    });
+    return () => {
+      current = false;
+      unsubscribe();
+    };
+  }, [zmkApp, subsystem, beginRequest, loadProfiles]);
+
   const switchProfile = async (index: number) => {
     if (!zmkApp?.state.connection || !subsystem) return;
 
@@ -136,8 +180,12 @@ function ProfileManagerState() {
     }
   };
 
-  const unpairProfile = async (index: number) => {
+  const unpairProfile = async (profile: ProfileInfo) => {
     if (!zmkApp?.state.connection || !subsystem) return;
+    if (!profile.peerIdentity) {
+      setError("Unlock Studio and refresh profiles before changing a peer");
+      return;
+    }
     if (!confirm("Are you sure you want to unpair this device?")) return;
 
     const active = beginRequest();
@@ -152,7 +200,10 @@ function ProfileManagerState() {
       );
 
       const request = Request.create({
-        unpairProfile: { index },
+        unpairProfile: {
+          index: profile.index,
+          expectedPeer: profile.peerIdentity,
+        },
       });
 
       const payload = Request.encode(request).finish();
@@ -182,6 +233,14 @@ function ProfileManagerState() {
 
   const saveProfileName = async (index: number, name: string) => {
     if (!zmkApp?.state.connection || !subsystem) return;
+    if (!editPeer) {
+      setError("Unlock Studio and refresh profiles before changing a peer");
+      return;
+    }
+    if (new TextEncoder().encode(name).length > 31) {
+      setError("Names must fit within 31 UTF-8 bytes");
+      return;
+    }
 
     const active = beginRequest();
     if (!active()) return;
@@ -195,7 +254,7 @@ function ProfileManagerState() {
       );
 
       const request = Request.create({
-        setProfileName: { index, name },
+        setProfileName: { index, name, expectedPeer: editPeer },
       });
 
       const payload = Request.encode(request).finish();
@@ -207,6 +266,7 @@ function ProfileManagerState() {
         if (resp.setProfileName?.success) {
           setEditingIndex(null);
           setEditName("");
+          setEditPeer(undefined);
           await loadProfiles();
         } else if (resp.error) {
           setError(resp.error.message);
@@ -225,14 +285,20 @@ function ProfileManagerState() {
     }
   };
 
-  const startEditing = (index: number, currentName: string) => {
-    setEditingIndex(index);
-    setEditName(currentName);
+  const startEditing = (profile: ProfileInfo) => {
+    if (!profile.peerIdentity) {
+      setError("Unlock Studio and refresh profiles before changing a peer");
+      return;
+    }
+    setEditingIndex(profile.index);
+    setEditName(profile.name);
+    setEditPeer(profile.peerIdentity);
   };
 
   const cancelEditing = () => {
     setEditingIndex(null);
     setEditName("");
+    setEditPeer(undefined);
   };
 
   if (!subsystem) {
@@ -293,6 +359,7 @@ function ProfileManagerState() {
                       <input
                         type="text"
                         value={editName}
+                        disabled={isLoading}
                         onChange={(e) => setEditName(e.target.value)}
                         placeholder="Device name"
                         maxLength={31}
@@ -321,9 +388,7 @@ function ProfileManagerState() {
                         )}
                         <button
                           className="btn btn-link"
-                          onClick={() =>
-                            startEditing(profile.index, profile.name)
-                          }
+                          onClick={() => startEditing(profile)}
                           disabled={isLoading}
                           title="Edit name"
                         >
@@ -350,7 +415,7 @@ function ProfileManagerState() {
                   )}
                   <button
                     className="btn btn-danger"
-                    onClick={() => unpairProfile(profile.index)}
+                    onClick={() => unpairProfile(profile)}
                     disabled={isLoading}
                   >
                     🗑️ Unpair

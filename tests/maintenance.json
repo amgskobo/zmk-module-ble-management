@@ -1,13 +1,34 @@
 {
   "schema": 1,
   "owner": "zmk-module-ble-management",
-  "supported_cores": ["dya"],
+  "supported_cores": [
+    "dya"
+  ],
   "unsupported_core_status": "NOT APPLICABLE",
   "commands": [
     "python3 -m unittest discover -v -s tests -p test_owner.py",
     "bash tests/run-web.sh"
   ],
   "coverage_map": "tests/README.md",
+  "peer_identity_regressions": {
+    "firmware": "tests/split-info/handler_test.c peer-identity: real-codec old/missing/replaced MAC/type refusal and valid controls; all role/optimization/sanitizer/repeat variants retained.",
+    "web": "tests/web/peerIdentity.spec.tsx: complete outgoing peer, original draft identity across replacement, lock reply retirement, UTF-8 boundary and older firmware refusal.",
+    "limits": "Controlled bond and RPC boundaries, not atomicity with independent core bond changes or physical BLE acceptance."
+  },
+  "peer_identity_blocking_boundaries": {
+    "fixture": "tests/split-info/handler_test.c",
+    "cases": [
+      "rename-reclaim",
+      "label-save-peer",
+      "label-delete-peer",
+      "unpair-selection",
+      "unpair-replacement"
+    ],
+    "contract": "Validated rename and label helper identities survive controlled settings-delete waits. Active index and full typed peer are checked again after the real prof_select API boundary, refusing changed selections before clear. Existing matching inactive-peer clear/restore assertions remain.",
+    "negative_operator": "python3 tests/review_negative_control.py FAULT ISOLATED_OWNER; fault first, then owner. Reuse retained same binary with the selected case for three named assertion failures; compile/setup failure is not detection.",
+    "disposition": "BLE-1 PARTIAL: module rename and post-selection fences implemented; unpair inside core and selection-restoration ABA remain incomplete.",
+    "limits": "No core conditional index/expected-peer clear or selection epoch exists in the selected DYA API. Core clear_profile_bond can wait while using its own borrowed peer then clears the captured index. Existing unpair/restore semantics are preserved; no atomic-core or physical timing claim."
+  },
   "web_lifecycle_fixture": "tests/web/lifecycle.spec.tsx: eighteen scenarios across three panels for connection/index ownership of success, error, loading, finally, mutation follow-up and unmount; seventeen original scenarios retained; schema generated before collection.",
   "preserved_assertions": "Relocated fixtures retain their prior assertions; no snapshot auto-accept or unique assertion removal.",
   "execution": {
@@ -33,5 +54,14 @@
     "fixture": "tests/web/splitResponseBoundary.spec.tsx",
     "scenarios": 5,
     "contract": "Absent SDK custom payload, empty/wrong-kind response and missing split info expose failure and same-connection retry; all four fail before validation repair. Retired absent-payload control stays isolated; all57 prior scenarios retained."
+  },
+  "storage_reclaim_and_open_profile": {
+    "fixture": "tests/split-info/handler_test.c",
+    "contract": "Refused typed/legacy stale-record deletion preserves cache and refuses new save; retry succeeds. Actual-core ANY open sentinel and invalid NONE peer refuse labels, bonded control succeeds. All existing assertions and variants retained; same binary three processes."
+  },
+  "web_management_mutations": {
+    "fixture": "tests/web/managementMutations.spec.tsx",
+    "scenarios": 12,
+    "contract": "Actual App wiring/profile refresh, clear failure/retry and retired connection; retire stale editor and cards on clear; pending-save input disabled and rejection draft retained. Pre-clear pending profile read and name-save success/error retire with the remounted profile panel; encoded name-save refusal preserves the successful retry draft. Real provider/service/codec with controlled connection/RPC."
   }
 }

@@ -2,127 +2,117 @@ syntax = "proto3";
 
 package zmk.ble_management;
 
+// A bonded peer's complete identity. Address bytes use Bluetooth's native
+// little-endian order; the type distinguishes public and random addresses.
+message PeerIdentity {
+  uint32 address_type = 1;
+  bytes address = 2;
+}
+
 // Profile information
 message ProfileInfo {
-    uint32 index = 1;
-    string name = 2;          // Custom name for the profile
-    string address = 3;       // BLE address (MAC address)
-    bool is_connected = 4;    // Whether currently connected
-    bool is_open = 5;         // Whether profile slot is not in use
-    bool is_active = 6;       // Whether this is the active profile
+  uint32 index = 1;
+  string name = 2;                // Custom name for the profile
+  string address = 3;             // BLE address (MAC address)
+  bool is_connected = 4;          // Whether currently connected
+  bool is_open = 5;               // Whether profile slot is not in use
+  bool is_active = 6;             // Whether this is the active profile
+  PeerIdentity peer_identity = 7; // Present only for an unlocked bonded slot
 }
 
 // Get all BLE profiles
 message GetProfilesRequest {}
 
 message GetProfilesResponse {
-    repeated ProfileInfo profiles = 1;
-    uint32 max_profiles = 2;  // Maximum number of profiles supported
+  repeated ProfileInfo profiles = 1;
+  uint32 max_profiles = 2; // Maximum number of profiles supported
 }
 
 // Set custom name for a profile
 message SetProfileNameRequest {
-    uint32 index = 1;
-    string name = 2;
+  uint32 index = 1;
+  string name = 2;
+  PeerIdentity expected_peer = 3; // Required; old/stale mutations are refused
 }
 
-message SetProfileNameResponse {
-    bool success = 1;
-}
+message SetProfileNameResponse { bool success = 1; }
 
 // Switch active profile
-message SwitchProfileRequest {
-    uint32 index = 1;
-}
+message SwitchProfileRequest { uint32 index = 1; }
 
-message SwitchProfileResponse {
-    bool success = 1;
-}
+message SwitchProfileResponse { bool success = 1; }
 
 // Unpair a specific profile
 message UnpairProfileRequest {
-    uint32 index = 1;
+  uint32 index = 1;
+  PeerIdentity expected_peer = 2; // Required; old/stale mutations are refused
 }
 
-message UnpairProfileResponse {
-    bool success = 1;
-}
+message UnpairProfileResponse { bool success = 1; }
 
 // Split keyboard information
 message SplitInfo {
-    bool is_split = 1;
-    bool is_central = 2;
-    bool peripheral_connected = 3;  // For central: is a peripheral connected
-    // For peripheral: is central bonded. Always false: Studio RPC runs only on
-    // the central.
-    bool central_bonded = 4;
+  bool is_split = 1;
+  bool is_central = 2;
+  bool peripheral_connected = 3; // For central: is a peripheral connected
+  // For peripheral: is central bonded. Always false: Studio RPC runs only on
+  // the central.
+  bool central_bonded = 4;
 }
 
 message GetSplitInfoRequest {}
 
-message GetSplitInfoResponse {
-    SplitInfo info = 1;
-}
+message GetSplitInfoResponse { SplitInfo info = 1; }
 
 // Clears the bond of every host profile and selects profile 0, like
 // &bt BT_CLR_ALL. The bond between split halves is kept; the name is
 // unchanged for wire compatibility.
 message ForgetSplitBondRequest {}
 
-message ForgetSplitBondResponse {
-    bool success = 1;
-}
+message ForgetSplitBondResponse { bool success = 1; }
 
 // Output priority (transport) type
 enum OutputPriority {
-    OUTPUT_PRIORITY_USB = 0;
-    OUTPUT_PRIORITY_BLE = 1;
+  OUTPUT_PRIORITY_USB = 0;
+  OUTPUT_PRIORITY_BLE = 1;
 }
 
 // Set output priority (toggle between USB and BLE)
-message SetOutputPriorityRequest {
-    OutputPriority priority = 1;
-}
+message SetOutputPriorityRequest { OutputPriority priority = 1; }
 
-message SetOutputPriorityResponse {
-    bool success = 1;
-}
+message SetOutputPriorityResponse { bool success = 1; }
 
 // Get current output priority
 message GetOutputPriorityRequest {}
 
-message GetOutputPriorityResponse {
-    OutputPriority priority = 1;
-}
+message GetOutputPriorityResponse { OutputPriority priority = 1; }
 
 // Main request/response wrapper
 message Request {
-    oneof request_type {
-        GetProfilesRequest get_profiles = 1;
-        SetProfileNameRequest set_profile_name = 2;
-        SwitchProfileRequest switch_profile = 3;
-        UnpairProfileRequest unpair_profile = 4;
-        GetSplitInfoRequest get_split_info = 5;
-        ForgetSplitBondRequest forget_split_bond = 6;
-        SetOutputPriorityRequest set_output_priority = 7;
-        GetOutputPriorityRequest get_output_priority = 8;
-    }
+  oneof request_type {
+    GetProfilesRequest get_profiles = 1;
+    SetProfileNameRequest set_profile_name = 2;
+    SwitchProfileRequest switch_profile = 3;
+    UnpairProfileRequest unpair_profile = 4;
+    GetSplitInfoRequest get_split_info = 5;
+    ForgetSplitBondRequest forget_split_bond = 6;
+    SetOutputPriorityRequest set_output_priority = 7;
+    GetOutputPriorityRequest get_output_priority = 8;
+  }
 }
 
-message ErrorResponse {
-    string message = 1;
-}
+message ErrorResponse { string message = 1; }
 
 message Response {
-    oneof response_type {
-        ErrorResponse error = 1;
-        GetProfilesResponse get_profiles = 2;
-        SetProfileNameResponse set_profile_name = 3;
-        SwitchProfileResponse switch_profile = 4;
-        UnpairProfileResponse unpair_profile = 5;
-        GetSplitInfoResponse get_split_info = 6;
-        ForgetSplitBondResponse forget_split_bond = 7;
-        SetOutputPriorityResponse set_output_priority = 8;
-        GetOutputPriorityResponse get_output_priority = 9;
-    }
+  oneof response_type {
+    ErrorResponse error = 1;
+    GetProfilesResponse get_profiles = 2;
+    SetProfileNameResponse set_profile_name = 3;
+    SwitchProfileResponse switch_profile = 4;
+    UnpairProfileResponse unpair_profile = 5;
+    GetSplitInfoResponse get_split_info = 6;
+    ForgetSplitBondResponse forget_split_bond = 7;
+    SetOutputPriorityResponse set_output_priority = 8;
+    GetOutputPriorityResponse get_output_priority = 9;
+  }
 }

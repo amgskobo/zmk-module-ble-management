@@ -19,14 +19,21 @@ import {
 } from "../proto/zmk/ble_management/ble_management";
 import "./SplitManager.css";
 
-export function SplitManager() {
+type SplitManagerProps = { onHostPairingsCleared?: () => void };
+
+export function SplitManager({ onHostPairingsCleared }: SplitManagerProps) {
   const app = useContext(ZMKAppContext);
   const index = app?.findSubsystem(SUBSYSTEM_IDENTIFIER)?.index;
   const key = useConnectionKey(app?.state.connection, index);
-  return <SplitManagerState key={key} />;
+  return (
+    <SplitManagerState
+      key={key}
+      onHostPairingsCleared={onHostPairingsCleared}
+    />
+  );
 }
 
-function SplitManagerState() {
+function SplitManagerState({ onHostPairingsCleared }: SplitManagerProps) {
   const zmkApp = useContext(ZMKAppContext);
   const beginRequest = useRequestLifetime();
   const [splitInfo, setSplitInfo] = useState<SplitInfo | null>(null);
@@ -126,6 +133,7 @@ function SplitManagerState() {
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
         if (resp.forgetSplitBond?.success) {
+          onHostPairingsCleared?.();
           alert(
             "Host pairings cleared and profile 0 selected. Pair each host again."
           );

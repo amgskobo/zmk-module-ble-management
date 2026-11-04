@@ -42,7 +42,20 @@ const profiles = (name: string, isOpen = false) =>
   wire({
     getProfiles: {
       maxProfiles: 5,
-      profiles: [{ index: 0, name, isOpen, isActive: false }],
+      profiles: [
+        {
+          index: 0,
+          name,
+          isOpen,
+          isActive: false,
+          peerIdentity: isOpen
+            ? undefined
+            : {
+                addressType: 0,
+                address: new Uint8Array([6, 5, 4, 3, 2, 1]),
+              },
+        },
+      ],
     },
   });
 

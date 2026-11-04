@@ -10,6 +10,7 @@
  */
 
 import "./App.css";
+import { useState } from "react";
 import { connect as serial_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
 import { ZMKConnection } from "@cormoran/zmk-studio-react-hook";
 import { ProfileManager } from "./components/ProfileManager";
@@ -19,6 +20,7 @@ import { OutputPriorityManager } from "./components/OutputPriorityManager";
 export const SUBSYSTEM_IDENTIFIER = "cormoran_ble";
 
 function App() {
+  const [profilesRevision, setProfilesRevision] = useState(0);
   return (
     <div className="app">
       <header className="app-header">
@@ -60,8 +62,12 @@ function App() {
             </section>
 
             <OutputPriorityManager />
-            <ProfileManager />
-            <SplitManager />
+            <ProfileManager refreshRevision={profilesRevision} />
+            <SplitManager
+              onHostPairingsCleared={() =>
+                setProfilesRevision((revision) => revision + 1)
+              }
+            />
           </>
         )}
       />
