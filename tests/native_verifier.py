@@ -8,6 +8,8 @@ import re
 import subprocess
 import time
 
+from sanitizer_output import has_sanitizer_report
+
 
 def enabled_config(path):
     return set(re.findall(r"^(CONFIG_\w+)=y$", path.read_text(), re.M))
@@ -134,6 +136,8 @@ def verify_native(output: Path, tests: Path):
                 raise AssertionError(
                     f"{case}: native exit {result.returncode}; see {run}"
                 )
+            if has_sanitizer_report(raw):
+                raise AssertionError(f"{case}: sanitizer diagnostic; see {run}")
             if re.search(r"\bFAIL:", raw):
                 raise AssertionError(f"{case}: failed owner assertion; see {run}")
             for hook in hooks:

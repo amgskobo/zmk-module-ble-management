@@ -2,6 +2,17 @@
 
 This repository owns its executable test logic and fixtures under `tests/`.
 
+`tests/web/responseBoundary.spec.tsx` checks all eight operations through the
+actual provider, service and generated codec. Its 61 cases cover matching
+responses, absent/empty/unrelated payloads, mixed oneof members, blank errors,
+and empty mutation acknowledgements, including same-connection retry, retained
+name drafts and absence of success follow-up reads or clear confirmations after
+invalid replies. Mutations use the actual schema's explicit success bool: an
+empty nested message is a refusal. The unchanged pre-repair components fail 35
+visible-error assertions; the other 26 cases pass as controls. All pre-existing
+Web assertions remain selected. Controlled RPC replies do not establish
+browser or device acceptance.
+
 `tests/split-info/handler_test.c` adds the `peer-identity` real-codec scenario:
 legacy index-only rename/unpair, replacement address/type and missing identities
 leave bonds and labels unchanged; a current complete identity succeeds. Locked
@@ -94,6 +105,10 @@ registration/coverage totals establish completeness. Preserve ordered outputs,
 raw timestamps and the first failure. Read actual dependencies before execution.
 
 `OWNER_TEST_OUTPUT=/absolute/new/directory` retains owner native/build outputs.
+The canonical entry passes a fresh `split-info/` child to the existing host
+runner, retaining its six binaries, generated inputs, compiler commands and
+hashes. The sibling `split-info.log` retains merged stdout/stderr even on a
+failed host run.
 An existing directory fails before tests. Without it a fresh temporary directory
 is printed and retained. No shared build directory is deleted. Use
 `PYTHONPATH=tests python3 -m unittest -v test_owner.WestCommandsTests.<method>`
@@ -105,7 +120,7 @@ the owner configuration. No dependencies are installed implicitly by the tests.
 
 The native verifier runs each built binary three times in independent empty
 initial-flash directories, retaining raw output before filtering. It checks real
-process exits, fatal assertions and every linked checked-init result before
+process exits, sanitizer diagnostics, fatal assertions and every linked checked-init result before
 comparing unchanged owner snapshots. A SYS_INIT error cannot be hidden by a
 later matching key trace. Native scheduling and controlled APIs still do not
 establish physical transport/retention. Test-only core/tool dependencies are
@@ -140,9 +155,33 @@ hooks and required feature/role configuration. Fixture-bound declarations also
 reject missing configuration when both the request and build omit it; excluded
 roles cannot replace the requested role. The verifier retains all three raw
 runs before comparing unchanged ordered snapshots and rejects logged failures,
-fatal output and missing/nonzero completions. `tests/test_native_verifier.py`
-owns eleven real-ELF admission controls, including a deliberately missing
-native scenario, wrong-role and unrelated-fixture controls.
+fatal output and missing/nonzero completions. A recovering ASan or UBSan report
+rejects admission even when the process exits zero and completes every marker
+and unchanged snapshot. Locationless application `runtime error:` labels remain
+admissible. `tests/test_native_verifier.py` preserves all eleven previous
+real-ELF controls and adds real recovering heap-overflow and signed-overflow
+ELFs, each replayed in three fresh states, plus a benign-label control.
+`OWNER_NATIVE_VERIFIER_OUTPUT=/absolute/new/directory` retains these fixtures,
+compiler commands, source/object/ELF identities and raw runs.
+
+`tests/native_sanitizer_control.py --verifier VERIFIER --fixtures RETAINED_CONTROLS
+--output FRESH_OUTPUT --expect accepted|rejected` reuses those exact fault ELFs
+three times per sanitizer through an archived original or the current verifier.
+The original must accept its completed zero-exit/snapshot runs; the current
+verifier must specifically reject `sanitizer diagnostic`. Compilation failures,
+nonzero native exits and incomplete markers do not qualify as these controls.
+No original fixture, role, configuration, snapshot or binary guard is removed.
+
+The selected DYA mock core can emit UBSan at
+`app/module/drivers/kscan/kscan_mock.c:103` (signed `1 << 31`). Strict combined
+ASan/UBSan stops there; recovering combined output must still fail the clean
+gate even if Studio registration and the snapshot complete. Keep that gate
+BLOCKED until the selected core is repaired and remeasured. ASan-only and plain
+optimized results retain their separate scope. Check actual CMake and native
+simulator compiler arguments before the first ELF launch: strict lanes require
+`CONFIG_ASAN_RECOVER=n` and final `-fno-sanitize-recover=all`; runtime
+`halt_on_error=1` alone does not establish compiler strictness. Native simulator
+optimization must be selected explicitly because its Makefile defaults to O0.
 
 `bash tests/run-web.sh` is the canonical schema-generation/Web test entry.
 It runs all configured Jest scenarios in one worker process. The pre-commit

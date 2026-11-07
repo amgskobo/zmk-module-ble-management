@@ -48,6 +48,13 @@ controlled connection/RPC helpers; they do not establish physical USB/BLE/split,
 bond storage, radio delivery or access-control behavior on a board. See the
 [owner test guide](../tests/README.md) for the separate firmware checks.
 
+Every operation admits a single matching response. Absent payloads, empty or
+unrelated responses, and mixed oneof members are errors; blank RPC errors get a
+visible fallback. Mutation replies need their explicit `success` flag. An empty
+nested mutation message defaults to false and cannot trigger a success refresh,
+retire a name draft or display a pairing-clear confirmation. A failed request
+can be retried on the same connection.
+
 An initial split-status failure shows its error and a Refresh action without
 requiring a reconnect. The recovery view remains visible while retrying and
 retires with its connection/subsystem. Initial unknown state and a confirmed
@@ -64,7 +71,12 @@ Messages, stacks, causes, arbitrary error names, profile/device names, addresses
 setting keys, prefixes, and values are not console arguments. UI errors and
 intentional profile displays retain their existing behavior. Individual RPC
 payloads and notifications are not logged.
-The Vite plugin also sanitizes executable console output in the two locked Studio SDKs. New SDK log sites stop the build for review; both SDKs are excluded from development prebundling so the same transform applies in development and production. Browser-generated diagnostics and unrelated browser extensions are outside this application's control.
+The application installs its console guard before importing the app and Studio
+SDKs. The owner tests inventory executable console calls in both locked SDKs and
+require reviewed fixed first labels; changed or new calls stop the tests for
+review. The same runtime guard applies in development and production.
+Browser-generated diagnostics and unrelated browser extensions are outside this
+application's control.
 
 ## Dependency security
 
@@ -72,3 +84,14 @@ The Vite plugin also sanitizes executable console output in the two locked Studi
 to `7.6.5`, including the patched UTF-8 helper. Use `npm ci` with this lockfile.
 After changing dependencies, run `npm audit --omit=dev`, the Web tests and the
 production build.
+
+The development lock also includes compatible patches such as Handlebars
+`4.7.10`, without changing the direct dependency requirements or the Studio
+client commits. On 2026-11-07 the full lock audit reports 18 development-only
+findings (four low, fourteen moderate; no critical or high), while
+`npm audit --omit=dev` reports zero. Full audit exits nonzero: the remaining
+paths include `deepmerge` with no published patch, and fixes for `glob` and
+`minimatch` outside their incoming major-version ranges. These advisory results
+do not establish an application exploit. Retain the full and production-only
+audit outputs when rechecking; the production-only result does not clear the
+development tools.

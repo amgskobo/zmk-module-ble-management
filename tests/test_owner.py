@@ -45,12 +45,19 @@ class WestCommandsTests(unittest.TestCase):
     )
     def test_split_info_payload(self):
         result = subprocess.run(
-            [sys.executable, "tests/split-info/run.py"],
+            [
+                sys.executable,
+                "tests/split-info/run.py",
+                "--output",
+                str(self.BUILD_DIR / "split-info"),
+            ],
             cwd=THIS_DIR,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
         )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (self.BUILD_DIR / "split-info.log").write_text(result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout)
 
     @classmethod
     def setUpClass(cls):

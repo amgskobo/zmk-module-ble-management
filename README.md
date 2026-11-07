@@ -45,6 +45,13 @@ Clearing host pairings refreshes the profile panel and retires any previous
 name editor. Name inputs are disabled while a save is pending, and a failed
 save restores the unchanged draft for retry.
 
+Each Web operation requires exactly one response of the matching kind. Missing,
+empty, unrelated or mixed responses show an operation error and allow a retry;
+they cannot trigger a mutation's success refresh, clear its name draft or report
+that host pairings were cleared. An error without a message gets a visible
+fallback. Mutation replies require `success = true`; an empty nested mutation
+reply has the schema's default `false` and is refused.
+
 Renaming and unpairing include the expected peer's address bytes and address
 type. Firmware refuses a missing or already replaced identity; older clients
 that send only a profile index must be updated. Use
@@ -136,6 +143,11 @@ west zephyr-export
 
 ### Testing
 
+Run the following test/build commands inside a prepared Docker workspace using
+the image pinned in `.github/workflows/zmk-module.yml`. Resolve the declared west
+imports and prepare the locked npm dependencies explicitly before the offline
+checks. See [tests/README.md](tests/README.md) for retained output and role checks.
+
 **Firmware Tests:**
 
 The hardware-independent RPC and storage regressions use the selected real
@@ -148,8 +160,8 @@ python3 tests/split-info/run.py
 ```
 
 ```bash
-# Run all firmware tests
-python -m unittest discover -s tests -p test_owner.py
+# Run all firmware tests with a new mounted output directory
+OWNER_TEST_OUTPUT=/absolute/new/results python3 -m unittest discover -v -s tests -p test_owner.py
 
 # Run specific test
 python -m unittest test_owner.WestCommandsTests.test_zmk_test
@@ -158,17 +170,19 @@ python -m unittest test_owner.WestCommandsTests.test_zmk_test
 **Web UI Tests:**
 
 ```bash
-cd web
-npm install
-npm test
-npm run lint
+# Explicit dependency preparation, when needed
+(cd web && npm ci)
+
+# Offline checks from the owner root
+bash tests/run-web.sh
+(cd web && npm run build && npm run lint)
 ```
 
 ### Web UI Development
 
 ```bash
 cd web
-npm install
+npm ci
 npm run dev  # Start development server at http://localhost:5173
 ```
 

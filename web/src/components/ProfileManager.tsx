@@ -1,5 +1,6 @@
 import { useConnectionKey, useRequestLifetime } from "../requestLifetime";
 import { errorKind } from "../logPrivacy";
+import { decodeResponse } from "../response";
 /**
  * ProfileManager Component
  *
@@ -15,7 +16,6 @@ import { SUBSYSTEM_IDENTIFIER } from "../App";
 import { LockState } from "@zmkfirmware/zmk-studio-ts-client/core";
 import {
   Request,
-  Response,
   ProfileInfo,
   PeerIdentity,
 } from "../proto/zmk/ble_management/ble_management";
@@ -69,15 +69,9 @@ function ProfileManagerState() {
         const responsePayload = await service.callRPC(payload);
         if (!active()) return;
 
-        if (responsePayload) {
-          const resp = Response.decode(responsePayload);
-          if (resp.getProfiles) {
-            setProfiles(resp.getProfiles.profiles);
-            setMaxProfiles(resp.getProfiles.maxProfiles);
-          } else if (resp.error) {
-            setError(resp.error.message);
-          }
-        }
+        const result = decodeResponse(responsePayload, "getProfiles");
+        setProfiles(result.profiles);
+        setMaxProfiles(result.maxProfiles);
       } catch (err) {
         if (!active()) return;
         console.error("Failed to load profiles:", errorKind(err));
@@ -158,16 +152,12 @@ function ProfileManagerState() {
       const responsePayload = await service.callRPC(payload);
       if (!active()) return;
 
-      if (responsePayload) {
-        const resp = Response.decode(responsePayload);
-        if (resp.switchProfile?.success) {
-          // Reload profiles to update active status
-          await loadProfiles();
-        } else if (resp.error) {
-          setError(resp.error.message);
-        } else {
-          setError("Failed to switch profile");
-        }
+      const result = decodeResponse(responsePayload, "switchProfile");
+      if (result.success) {
+        // Reload profiles to update active status
+        await loadProfiles();
+      } else {
+        setError("Failed to switch profile");
       }
     } catch (err) {
       if (!active()) return;
@@ -210,15 +200,11 @@ function ProfileManagerState() {
       const responsePayload = await service.callRPC(payload);
       if (!active()) return;
 
-      if (responsePayload) {
-        const resp = Response.decode(responsePayload);
-        if (resp.unpairProfile?.success) {
-          await loadProfiles();
-        } else if (resp.error) {
-          setError(resp.error.message);
-        } else {
-          setError("Failed to unpair profile");
-        }
+      const result = decodeResponse(responsePayload, "unpairProfile");
+      if (result.success) {
+        await loadProfiles();
+      } else {
+        setError("Failed to unpair profile");
       }
     } catch (err) {
       if (!active()) return;
@@ -261,18 +247,14 @@ function ProfileManagerState() {
       const responsePayload = await service.callRPC(payload);
       if (!active()) return;
 
-      if (responsePayload) {
-        const resp = Response.decode(responsePayload);
-        if (resp.setProfileName?.success) {
-          setEditingIndex(null);
-          setEditName("");
-          setEditPeer(undefined);
-          await loadProfiles();
-        } else if (resp.error) {
-          setError(resp.error.message);
-        } else {
-          setError("Failed to save profile name");
-        }
+      const result = decodeResponse(responsePayload, "setProfileName");
+      if (result.success) {
+        setEditingIndex(null);
+        setEditName("");
+        setEditPeer(undefined);
+        await loadProfiles();
+      } else {
+        setError("Failed to save profile name");
       }
     } catch (err) {
       if (!active()) return;

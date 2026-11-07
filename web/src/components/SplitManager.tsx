@@ -1,5 +1,6 @@
 import { useConnectionKey, useRequestLifetime } from "../requestLifetime";
 import { errorKind } from "../logPrivacy";
+import { decodeResponse } from "../response";
 /**
  * SplitManager Component
  *
@@ -12,11 +13,7 @@ import {
   ZMKAppContext,
 } from "@cormoran/zmk-studio-react-hook";
 import { SUBSYSTEM_IDENTIFIER } from "../App";
-import {
-  Request,
-  Response,
-  SplitInfo,
-} from "../proto/zmk/ble_management/ble_management";
+import { Request, SplitInfo } from "../proto/zmk/ble_management/ble_management";
 import "./SplitManager.css";
 
 type SplitManagerProps = { onHostPairingsCleared?: () => void };
@@ -66,17 +63,10 @@ function SplitManagerState({ onHostPairingsCleared }: SplitManagerProps) {
         const payload = Request.encode(request).finish();
         const responsePayload = await service.callRPC(payload);
         if (!active()) return;
-        if (!responsePayload) {
-          throw new Error("No split information received");
-        }
-
-        const resp = Response.decode(responsePayload);
-        if (resp.getSplitInfo?.info) {
-          setSplitInfo(resp.getSplitInfo.info);
+        const result = decodeResponse(responsePayload, "getSplitInfo");
+        if (result.info) {
+          setSplitInfo(result.info);
           setHasLoadFailed(false);
-        } else if (resp.error) {
-          setError(resp.error.message);
-          setHasLoadFailed(true);
         } else {
           throw new Error("Unexpected split information response");
         }
@@ -130,19 +120,15 @@ function SplitManagerState({ onHostPairingsCleared }: SplitManagerProps) {
       const responsePayload = await service.callRPC(payload);
       if (!active()) return;
 
-      if (responsePayload) {
-        const resp = Response.decode(responsePayload);
-        if (resp.forgetSplitBond?.success) {
-          onHostPairingsCleared?.();
-          alert(
-            "Host pairings cleared and profile 0 selected. Pair each host again."
-          );
-          await loadSplitInfo();
-        } else if (resp.error) {
-          setError(resp.error.message);
-        } else {
-          setError("Failed to clear host pairings");
-        }
+      const result = decodeResponse(responsePayload, "forgetSplitBond");
+      if (result.success) {
+        onHostPairingsCleared?.();
+        alert(
+          "Host pairings cleared and profile 0 selected. Pair each host again."
+        );
+        await loadSplitInfo();
+      } else {
+        setError("Failed to clear host pairings");
       }
     } catch (err) {
       if (!active()) return;

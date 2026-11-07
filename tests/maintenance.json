@@ -39,7 +39,7 @@
   "gaps": [
     "Physical USB/BLE/split delivery, timing, power and retention require matching production-board evidence."
   ],
-  "native_verification": "tests/native_verifier.py: actual exit, registered test completion, raw ordered logs, unchanged snapshots, identical binary repeated three times.",
+  "native_verification": "tests/native_verifier.py: actual exit, sanitizer diagnostics including recovery with exit zero, registered test completion, raw ordered logs, unchanged snapshots, identical binary repeated three times. All eleven previous admission controls plus real recovering ASan/UBSan ELF controls in three fresh states and a locationless benign-label control remain selected. OWNER_NATIVE_VERIFIER_OUTPUT retains compiler/source/object/ELF/run evidence; tests/native_sanitizer_control.py replays the same fault ELFs through archived original/current verifiers. Studio has no declared checked-init hooks. Selected DYA kscan_mock.c:103 signed shift blocks the combined sanitizer-clean gate; strict compiler arguments and explicit native simulator optimization must be checked before first launch.",
   "web_split_recovery_fixture": {
     "fixture": "tests/web/splitRetry.spec.tsx",
     "scenarios": 6,
@@ -63,5 +63,11 @@
     "fixture": "tests/web/managementMutations.spec.tsx",
     "scenarios": 12,
     "contract": "Actual App wiring/profile refresh, clear failure/retry and retired connection; retire stale editor and cards on clear; pending-save input disabled and rejection draft retained. Pre-clear pending profile read and name-save success/error retire with the remounted profile panel; encoded name-save refusal preserves the successful retry draft. Real provider/service/codec with controlled connection/RPC."
+  },
+  "web_operation_response_boundaries": {
+    "fixture": "tests/web/responseBoundary.spec.tsx",
+    "scenarios": 61,
+    "contract": "All eight operations require one matching response, with a visible blank-error fallback; missing/empty/unrelated/mixed replies cannot issue success follow-ups or clear drafts/confirmations. Mutation success is explicit; empty nested acknowledgements are false. Same-connection retry and all original assertions remain.",
+    "original_control": "Unchanged pre-repair components fail 35 visible-error assertions and pass 26 controls; zero skipped cases. Controlled provider/service/codec replies, not physical acceptance."
   }
 }

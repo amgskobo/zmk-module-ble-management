@@ -1,5 +1,6 @@
 import { useConnectionKey, useRequestLifetime } from "../requestLifetime";
 import { errorKind } from "../logPrivacy";
+import { decodeResponse } from "../response";
 /**
  * OutputPriorityManager Component
  *
@@ -14,7 +15,6 @@ import {
 import { SUBSYSTEM_IDENTIFIER } from "../App";
 import {
   Request,
-  Response,
   OutputPriority,
 } from "../proto/zmk/ble_management/ble_management";
 import "./OutputPriorityManager.css";
@@ -61,14 +61,8 @@ function OutputPriorityManagerState() {
         const responsePayload = await service.callRPC(payload);
         if (!active()) return;
 
-        if (responsePayload) {
-          const resp = Response.decode(responsePayload);
-          if (resp.getOutputPriority) {
-            setCurrentPriority(resp.getOutputPriority.priority);
-          } else if (resp.error) {
-            setError(resp.error.message);
-          }
-        }
+        const result = decodeResponse(responsePayload, "getOutputPriority");
+        setCurrentPriority(result.priority);
       } catch (err) {
         if (!active()) return;
         console.error("Failed to load output priority:", errorKind(err));
@@ -112,15 +106,11 @@ function OutputPriorityManagerState() {
       const responsePayload = await service.callRPC(payload);
       if (!active()) return;
 
-      if (responsePayload) {
-        const resp = Response.decode(responsePayload);
-        if (resp.setOutputPriority?.success) {
-          await loadOutputPriority();
-        } else if (resp.error) {
-          setError(resp.error.message);
-        } else {
-          setError("Failed to set output priority");
-        }
+      const result = decodeResponse(responsePayload, "setOutputPriority");
+      if (result.success) {
+        await loadOutputPriority();
+      } else {
+        setError("Failed to set output priority");
       }
     } catch (err) {
       if (!active()) return;
