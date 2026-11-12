@@ -10,7 +10,8 @@
 
 /* Host-profile labels, kept per bonded address (src/profile_labels.c, built
  * with CONFIG_ZMK_BLE). Changes run on the Studio RPC thread; loading runs in
- * settings_load(), before any RPC. */
+ * the core's settings_load(). This store does not enforce startup serialization
+ * between those threads. */
 
 /* ProfileInfo.name / SetProfileNameRequest.name max_size. */
 #define PROFILE_NAME_SIZE 32

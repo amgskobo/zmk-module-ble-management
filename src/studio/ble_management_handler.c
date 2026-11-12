@@ -70,11 +70,10 @@ static bool request_needs_unlock(pb_size_t request_type) {
 }
 
 static void set_error(zmk_ble_management_Response *resp, const char *message) {
-  zmk_ble_management_ErrorResponse err =
-      zmk_ble_management_ErrorResponse_init_zero;
-  snprintf(err.message, sizeof(err.message), "%s", message);
+  /* The allocated response owns the message until deferred encoding completes. */
   resp->which_response_type = zmk_ble_management_Response_error_tag;
-  resp->response_type.error = err;
+  snprintf(resp->response_type.error.message,
+           sizeof(resp->response_type.error.message), "%s", message);
 }
 
 #if IS_ENABLED(CONFIG_ZMK_BLE)
@@ -390,9 +389,10 @@ ble_management_rpc_handle_request(const zmk_custom_CallRequest *raw_request,
   }
 
   if (rc != 0) {
-    char message[sizeof(resp->response_type.error.message)];
-    snprintf(message, sizeof(message), "Failed to process request: %d", rc);
-    set_error(resp, message);
+    resp->which_response_type = zmk_ble_management_Response_error_tag;
+    snprintf(resp->response_type.error.message,
+             sizeof(resp->response_type.error.message),
+             "Failed to process request: %d", rc);
   }
   return true;
 }

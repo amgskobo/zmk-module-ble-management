@@ -202,6 +202,23 @@ The web UI uses:
 
 ## Architecture
 
+### Resource and ownership boundaries
+
+The label cache retains one 42-byte entry per configured host profile with the
+selected ARM compiler: 210 bytes for five profiles, including every 32-byte name
+and the full typed address. Its three flag bytes stay independent. The selected
+core starts static threads before `main()` loads settings, and settings reads can
+wait, so initialization order alone does not prove that packed flag writes would
+be safe. No label capacity, stored key or stored value format is reduced.
+
+RPC replies retain the selected DYA API's static response buffer: request-response
+encoding happens after the handler returns and can run more than once. Error
+messages are formatted directly into that buffer, avoiding temporary 64-byte
+message arrays and a second copy. This changes no schema, command, unlock gate or
+peer-address visibility rule. It adds no mutex, heap allocation, callback, timer
+or global scratch buffer. Existing core limitations around concurrent unpairing
+and selection restoration still apply.
+
 ### Firmware Components
 
 - **`src/studio/ble_management_handler.c`**: Main RPC handler
